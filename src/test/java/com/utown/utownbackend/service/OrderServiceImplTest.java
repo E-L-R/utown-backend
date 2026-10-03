@@ -4,6 +4,8 @@ import com.utown.utownbackend.dto.*;
 import com.utown.utownbackend.entity.*;
 import com.utown.utownbackend.repository.*;
 import com.utown.utownbackend.security.CustomUserDetails;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Counter;
 import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,6 +77,12 @@ class OrderServiceImplTest {
     @Mock
     private SocketIONotificationService socketIONotificationService;
 
+    @Mock
+    private MeterRegistry meterRegistry;
+
+    @Mock
+    private Counter counter;
+
     @InjectMocks
     private OrderServiceImpl orderService;
 
@@ -88,6 +96,10 @@ class OrderServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        if (meterRegistry != null) {
+            org.mockito.Mockito.lenient().when(meterRegistry.counter(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+                  .thenReturn(counter);
+        }
         user = new User();
         user.setId(1L);
 
