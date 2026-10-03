@@ -111,6 +111,21 @@
 			<artifactId>bucket4j-core</artifactId>
 			<version>8.10.1</version>
 		</dependency>
+		<dependency>
+			<groupId>com.socketio4j</groupId>
+			<artifactId>netty-socketio-core</artifactId>
+			<version>4.0.1</version>
+		</dependency>
+		<dependency>
+			<groupId>org.springdoc</groupId>
+			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+			<version>3.0.0</version>
+		</dependency>
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>s3</artifactId>
+			<version>2.30.29</version>
+		</dependency>
 	</dependencies>
 
 	<build>
