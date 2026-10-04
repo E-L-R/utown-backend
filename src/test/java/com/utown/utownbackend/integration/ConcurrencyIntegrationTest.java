@@ -84,7 +84,7 @@ public class ConcurrencyIntegrationTest {
         User user = new User();
         user.setName("Test User");
         user.setPassword("password");
-        user.setEmail("test_concurrency@example.com");
+        user.setEmail("test_concurrency_" + java.util.UUID.randomUUID() + "@example.com");
         user.setRole(UserRole.CUSTOMER);
         user.setPhone("01012345678");
         user.setStatus(UserStatus.ACTIVE);
@@ -123,7 +123,7 @@ public class ConcurrencyIntegrationTest {
         User riderUser = new User();
         riderUser.setName("Test Rider");
         riderUser.setPassword("password");
-        riderUser.setEmail("test_rider@example.com");
+        riderUser.setEmail("test_rider_" + java.util.UUID.randomUUID() + "@example.com");
         riderUser.setRole(UserRole.RIDER);
         riderUser.setPhone("01087654321");
         riderUser.setStatus(UserStatus.ACTIVE);
@@ -207,5 +207,62 @@ public class ConcurrencyIntegrationTest {
 
         assertThatThrownBy(() -> deliveryAssignmentRepository.save(tx2))
                 .isInstanceOf(ObjectOptimisticLockingFailureException.class);
+    }
+
+    @Test
+    @DisplayName("Concurrent updates from multiple threads should only allow one to succeed")
+    public void testConcurrentUpdatesFromMultipleThreads() throws Exception {
+        Order order = new Order();
+        order.setOrderNumber(java.util.UUID.randomUUID().toString());
+        order.setCurrency("KRW");
+        order.setUser(testUser);
+        order.setRestaurant(testRestaurant);
+        order.setAddress(testAddress);
+        order.setStatus(OrderStatus.PENDING);
+        order.setSubtotal(BigDecimal.TEN);
+        order.setDeliveryFee(BigDecimal.ONE);
+        order.setTotalAmount(BigDecimal.valueOf(11));
+        order.setPaymentMethod(PaymentMethod.CARD);
+        order.setPaymentStatus(PaymentStatus.PENDING);
+        order = orderRepository.save(order);
+
+        final Long orderId = order.getId();
+
+        int threadCount = 2;
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(threadCount);
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch doneLatch = new java.util.concurrent.CountDownLatch(threadCount);
+
+        java.util.concurrent.atomic.AtomicInteger successCount = new java.util.concurrent.atomic.AtomicInteger(0);
+        java.util.concurrent.atomic.AtomicInteger optimisticLockFailureCount = new java.util.concurrent.atomic.AtomicInteger(0);
+
+        // We use a separate component or just transactions manually.
+        // Actually, simulating it using manually created threads and direct repository calls.
+        for (int i = 0; i < threadCount; i++) {
+            executor.submit(() -> {
+                try {
+                    latch.await();
+                    // Each thread runs its own transaction (using a new transaction template or we just rely on save() creating one)
+                    // The easiest way without TransactionTemplate is to just read and save, which acts across transactions
+                    Order o = orderRepository.findById(orderId).orElseThrow();
+                    o.setStatus(OrderStatus.ACCEPTED);
+                    orderRepository.save(o);
+                    successCount.incrementAndGet();
+                } catch (org.springframework.dao.OptimisticLockingFailureException e) {
+                    optimisticLockFailureCount.incrementAndGet();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                } finally {
+                    doneLatch.countDown();
+                }
+            });
+        }
+
+        latch.countDown();
+        doneLatch.await();
+        executor.shutdown();
+
+        assertThat(successCount.get()).isEqualTo(1);
+        assertThat(optimisticLockFailureCount.get()).isEqualTo(1);
     }
 }
