@@ -31,6 +31,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         }
     }
 
+    @Override
+    protected ProblemDetail createProblemDetail(Exception ex, HttpStatusCode status, String defaultDetail,
+                                                String detailMessageCode, Object[] detailMessageArguments,
+                                                WebRequest request) {
+        ProblemDetail problemDetail = super.createProblemDetail(ex, status, defaultDetail, detailMessageCode, detailMessageArguments, request);
+        enrichProblemDetail(problemDetail);
+        return problemDetail;
+    }
+
     @ExceptionHandler(EntityNotFoundException.class)
     public ResponseEntity<ProblemDetail> handleEntityNotFound(EntityNotFoundException ex) {
         log.warn("Entity not found: {}", ex.getMessage());

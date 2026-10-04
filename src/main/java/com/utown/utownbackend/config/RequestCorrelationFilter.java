@@ -25,7 +25,7 @@ public class RequestCorrelationFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
 
         String requestId = request.getHeader(REQUEST_ID_HEADER);
-        if (requestId == null || requestId.isBlank()) {
+        if (requestId == null || requestId.isBlank() || !isValidUuid(requestId)) {
             requestId = UUID.randomUUID().toString();
         }
 
@@ -36,6 +36,15 @@ public class RequestCorrelationFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
         } finally {
             MDC.remove(MDC_REQUEST_ID_KEY);
+        }
+    }
+
+    private boolean isValidUuid(String uuid) {
+        try {
+            UUID.fromString(uuid);
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
         }
     }
 }
