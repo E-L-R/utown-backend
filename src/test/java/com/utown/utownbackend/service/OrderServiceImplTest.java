@@ -784,6 +784,45 @@ class OrderServiceImplTest {
     }
 
     @Test
+    void cancelOrder_outForDelivery_throwsIllegalStateException() {
+        Order o = createTestOrder(500L, OrderStatus.OUT_FOR_DELIVERY);
+        when(orderRepository.findById(500L)).thenReturn(Optional.of(o));
+
+        OrderCancelRequestDto request = new OrderCancelRequestDto("Changed mind");
+        assertThrows(IllegalStateException.class, () -> orderService.cancelOrder(500L, request));
+        verify(orderRepository, never()).save(o);
+    }
+
+    @Test
+    void transitionOrderStatus_outForDelivery_recordsHistoryAndNotifies() {
+        Order o = createTestOrder(500L, OrderStatus.READY_FOR_PICKUP);
+        OrderItem item = createTestOrderItem(600L, o);
+
+        when(orderRepository.findById(500L)).thenReturn(Optional.of(o));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(orderItemRepository.findAllByOrderId(500L)).thenReturn(List.of(item));
+        when(orderItemOptionRepository.findAllByOrderItemIdIn(List.of(600L))).thenReturn(List.of());
+
+        User rider = new User();
+        rider.setId(2L);
+        rider.setEmail("rider@example.com");
+
+        OrderResponseDto response = orderService.transitionOrderStatus(500L, OrderStatus.OUT_FOR_DELIVERY, rider, "Picked up");
+
+        assertNotNull(response);
+        assertEquals(OrderStatus.OUT_FOR_DELIVERY, response.status());
+        assertNotNull(response.pickedUpAt());
+        
+        verify(orderRepository).save(o);
+        verify(orderStatusHistoryRepository).save(org.mockito.ArgumentMatchers.argThat(h -> 
+            h.getStatus() == OrderStatus.OUT_FOR_DELIVERY &&
+            "Picked up".equals(h.getReason()) &&
+            h.getChangedByUser().equals(rider)
+        ));
+        verify(socketIONotificationService).sendOrderStatusUpdated(1L, response);
+    }
+
+    @Test
     void markReadyForPickup_inPreparation_success() {
         Order o = createTestOrder(500L, OrderStatus.IN_PREPARATION);
         OrderItem item = createTestOrderItem(600L, o);
