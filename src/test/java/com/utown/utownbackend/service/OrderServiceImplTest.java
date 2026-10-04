@@ -99,7 +99,7 @@ class OrderServiceImplTest {
         if (meterRegistry != null) {
             org.mockito.Mockito.lenient().when(meterRegistry.counter(
                 org.mockito.ArgumentMatchers.anyString(), 
-                org.mockito.ArgumentMatchers.<String>any()
+                org.mockito.ArgumentMatchers.any(String[].class)
             )).thenReturn(counter);
         }
         user = new User();
