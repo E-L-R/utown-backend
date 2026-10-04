@@ -45,6 +45,7 @@ public class OrderServiceImpl implements OrderService {
     private final CartItemOptionRepository cartItemOptionRepository;
     private final RestaurantDeliveryAreaRepository restaurantDeliveryAreaRepository;
     private final SocketIONotificationService socketIONotificationService;
+    private final PaymentGateway paymentGateway;
 
     private record PreparedItem(
             Dish dish,
@@ -187,6 +188,16 @@ public class OrderServiceImpl implements OrderService {
         order.setPaymentMethod(request.paymentMethod());
         order.setPaymentStatus(PaymentStatus.PENDING);
         order.setDeliveryNote(request.deliveryNote());
+
+        if (order.getPaymentMethod() == PaymentMethod.CARD || order.getPaymentMethod() == PaymentMethod.BANK_TRANSFER) {
+            PaymentResult paymentResult = paymentGateway.charge(order, order.getTotalAmount());
+            if (!paymentResult.success()) {
+                order.setPaymentStatus(PaymentStatus.FAILED);
+                throw new IllegalStateException("Payment failed: " + paymentResult.message());
+            }
+            order.setPaymentStatus(PaymentStatus.PAID);
+            order.setPaymentTransactionId(paymentResult.transactionId());
+        }
 
         Order savedOrder = orderRepository.save(order);
         recordStatusHistory(savedOrder, OrderStatus.PENDING, user, null);
@@ -506,6 +517,16 @@ public class OrderServiceImpl implements OrderService {
         order.setPaymentStatus(PaymentStatus.PENDING);
         order.setDeliveryNote(request.deliveryNote());
 
+        if (order.getPaymentMethod() == PaymentMethod.CARD || order.getPaymentMethod() == PaymentMethod.BANK_TRANSFER) {
+            PaymentResult paymentResult = paymentGateway.charge(order, order.getTotalAmount());
+            if (!paymentResult.success()) {
+                order.setPaymentStatus(PaymentStatus.FAILED);
+                throw new IllegalStateException("Payment failed: " + paymentResult.message());
+            }
+            order.setPaymentStatus(PaymentStatus.PAID);
+            order.setPaymentTransactionId(paymentResult.transactionId());
+        }
+
         Order savedOrder = orderRepository.save(order);
 
         List<OrderItemResponseDto> orderItemDtos = new ArrayList<>();
@@ -574,6 +595,14 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new EntityNotFoundException("Order not found with id: " + id));
 
         if (order.getPaymentStatus() == PaymentStatus.PAID) {
+            if (order.getPaymentTransactionId() != null) {
+                PaymentResult refundResult = paymentGateway.refund(order, order.getPaymentTransactionId());
+                if (!refundResult.success()) {
+                    log.error("Refund failed for order {}: {}", order.getId(), refundResult.message());
+                    // We log the error but still cancel the order for now, 
+                    // in a real system we might queue a retry or throw an exception.
+                }
+            }
             order.setPaymentStatus(PaymentStatus.REFUNDED);
         }
 
@@ -717,7 +746,12 @@ public class OrderServiceImpl implements OrderService {
             case ACCEPTED -> order.setAcceptedAt(now);
             case READY_FOR_PICKUP -> order.setReadyAt(now);
             case OUT_FOR_DELIVERY -> order.setPickedUpAt(now);
-            case DELIVERED -> order.setDeliveredAt(now);
+            case DELIVERED -> {
+                order.setDeliveredAt(now);
+                if (order.getPaymentMethod() == PaymentMethod.CASH && order.getPaymentStatus() == PaymentStatus.PENDING) {
+                    order.setPaymentStatus(PaymentStatus.PAID);
+                }
+            }
             case DECLINED -> {
                 order.setRejectedAt(now);
                 order.setRejectionReason(reason);

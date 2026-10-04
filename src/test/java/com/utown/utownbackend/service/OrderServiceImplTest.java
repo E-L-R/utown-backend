@@ -75,6 +75,9 @@ class OrderServiceImplTest {
     @Mock
     private SocketIONotificationService socketIONotificationService;
 
+    @Mock
+    private PaymentGateway paymentGateway;
+
     @InjectMocks
     private OrderServiceImpl orderService;
 
@@ -174,6 +177,9 @@ class OrderServiceImplTest {
             return opt;
         });
 
+        when(paymentGateway.charge(any(Order.class), any(BigDecimal.class)))
+                .thenReturn(new com.utown.utownbackend.dto.PaymentResult(true, "txn_123", "Success"));
+
         OrderResponseDto response = orderService.createOrder(orderRequest);
 
         assertNotNull(response);
@@ -184,7 +190,7 @@ class OrderServiceImplTest {
         assertTrue(response.orderNumber().startsWith("ORD-"));
         assertEquals(OrderStatus.PENDING, response.status());
         assertEquals(PaymentMethod.CARD, response.paymentMethod());
-        assertEquals(PaymentStatus.PENDING, response.paymentStatus());
+        assertEquals(PaymentStatus.PAID, response.paymentStatus());
         assertEquals("Ring bell", response.deliveryNote());
         // Unit price = 10.00, option = 2.50 -> item unit = 12.50 * 2 = 25.00
         assertEquals(BigDecimal.valueOf(25.00), response.subTotal());
@@ -618,6 +624,9 @@ class OrderServiceImplTest {
             return opt;
         });
 
+        when(paymentGateway.charge(any(Order.class), any(BigDecimal.class)))
+                .thenReturn(new com.utown.utownbackend.dto.PaymentResult(true, "txn_123", "Success"));
+
         OrderResponseDto response = orderService.checkout(request);
 
         assertNotNull(response);
@@ -627,7 +636,7 @@ class OrderServiceImplTest {
         assertEquals(100L, response.addressId());
         assertEquals(OrderStatus.PENDING, response.status());
         assertEquals(PaymentMethod.CARD, response.paymentMethod());
-        assertEquals(PaymentStatus.PENDING, response.paymentStatus());
+        assertEquals(PaymentStatus.PAID, response.paymentStatus());
         assertEquals("Leave at door", response.deliveryNote());
         assertEquals(BigDecimal.valueOf(25.00), response.subTotal());
         assertEquals(BigDecimal.valueOf(25.00), response.totalAmount());
@@ -640,6 +649,37 @@ class OrderServiceImplTest {
         verify(cartRepository).save(cart);
         verify(orderStatusHistoryRepository).save(any(OrderStatusHistory.class));
         verify(socketIONotificationService).sendNewOrder(99L, response);
+    }
+
+    @Test
+    void checkout_paymentFailure() {
+        CheckoutRequestDto request = new CheckoutRequestDto(1L, 100L, PaymentMethod.CARD, "Leave at door");
+        Cart cart = new Cart();
+        cart.setId(50L);
+        cart.setUser(user);
+        cart.setRestaurant(restaurant);
+        cart.setStatus(CartStatus.ACTIVE);
+
+        CartItem item = new CartItem();
+        item.setId(500L);
+        item.setCart(cart);
+        item.setDish(dish1);
+        item.setQuantity(2);
+
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
+        when(cartRepository.findByUserIdAndStatus(1L, CartStatus.ACTIVE)).thenReturn(Optional.of(cart));
+        when(cartItemRepository.findAllByCartId(50L)).thenReturn(List.of(item));
+        when(addressRepository.findByIdAndDeletedAtIsNull(100L)).thenReturn(Optional.of(address));
+        when(restaurantDeliveryAreaRepository.existsByRestaurantIdAndDeliveryAreaIdAndDeletedAtIsNull(10L, 10L)).thenReturn(true);
+        when(dishRepository.findByIdAndDeletedAtIsNull(dish1.getId())).thenReturn(Optional.of(dish1));
+        
+        when(paymentGateway.charge(any(Order.class), any(BigDecimal.class)))
+                .thenReturn(new com.utown.utownbackend.dto.PaymentResult(false, null, "Insufficient funds"));
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class, () -> orderService.checkout(request));
+        assertEquals("Payment failed: Insufficient funds", exception.getMessage());
+        verify(paymentGateway).charge(any(Order.class), any(BigDecimal.class));
+        verify(orderRepository, never()).save(any(Order.class));
     }
 
     @Test
@@ -753,12 +793,16 @@ class OrderServiceImplTest {
     void cancelOrder_pending_success() {
         Order o = createTestOrder(500L, OrderStatus.PENDING);
         o.setPaymentStatus(PaymentStatus.PAID);
+        o.setPaymentTransactionId("txn_123");
         OrderItem item = createTestOrderItem(600L, o);
 
         when(orderRepository.findById(500L)).thenReturn(Optional.of(o));
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
         when(orderItemRepository.findAllByOrderId(500L)).thenReturn(List.of(item));
         when(orderItemOptionRepository.findAllByOrderItemIdIn(List.of(600L))).thenReturn(List.of());
+        
+        when(paymentGateway.refund(any(Order.class), eq("txn_123")))
+                .thenReturn(new com.utown.utownbackend.dto.PaymentResult(true, "ref_123", "Refund Success"));
 
         OrderCancelRequestDto request = new OrderCancelRequestDto("Customer changed their mind");
         OrderResponseDto response = orderService.cancelOrder(500L, request);
@@ -768,6 +812,7 @@ class OrderServiceImplTest {
         assertEquals("Customer changed their mind", response.rejectionReason());
         assertNotNull(response.cancelledAt());
         assertEquals(PaymentStatus.REFUNDED, response.paymentStatus());
+        verify(paymentGateway).refund(any(Order.class), eq("txn_123"));
         verify(orderRepository).save(o);
         verify(orderStatusHistoryRepository).save(any(OrderStatusHistory.class));
         verify(socketIONotificationService).sendOrderStatusUpdated(1L, response);
