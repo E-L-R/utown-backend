@@ -65,6 +65,9 @@ public class OrderJourneyIntegrationTest {
     private DeliveryAreaRepository deliveryAreaRepository;
 
     @Autowired
+    private RestaurantDeliveryAreaRepository restaurantDeliveryAreaRepository;
+
+    @Autowired
     private AddressRepository addressRepository;
 
     @Autowired
@@ -83,6 +86,7 @@ public class OrderJourneyIntegrationTest {
     private JwtUtil jwtUtil;
 
     // Shared state between tests
+    private static boolean seeded = false;
     private static String customerToken;
     private static String ownerToken;
     private static String riderToken;
@@ -95,20 +99,23 @@ public class OrderJourneyIntegrationTest {
 
     @BeforeEach
     public void setup() {
-        if (userRepository.count() > 0) return; // Only seed once
+        if (seeded) return;
+
+        String runId = UUID.randomUUID().toString().substring(0, 8);
 
         // Create City and Delivery Area
         City city = new City();
-        city.setName("Seoul");
+        city.setName("Seoul Journey " + runId);
         city = cityRepository.save(city);
 
         DeliveryArea area = new DeliveryArea();
-        area.setName("Gangnam");
+        area.setName("Gangnam " + runId);
         area.setCity(city);
         area = deliveryAreaRepository.save(area);
 
         // Create Users
         User customer = new User();
+        customer.setEmail("customer.journey." + runId + "@test.com");
         customer.setPhone("01011112222");
         customer.setPassword(passwordEncoder.encode("password123"));
         customer.setRole(UserRole.CUSTOMER);
@@ -117,6 +124,7 @@ public class OrderJourneyIntegrationTest {
         customer = userRepository.save(customer);
 
         User owner = new User();
+        owner.setEmail("owner.journey." + runId + "@test.com");
         owner.setPhone("01033334444");
         owner.setPassword(passwordEncoder.encode("password123"));
         owner.setRole(UserRole.RESTAURANT_OWNER);
@@ -125,6 +133,7 @@ public class OrderJourneyIntegrationTest {
         owner = userRepository.save(owner);
 
         User rider = new User();
+        rider.setEmail("rider.journey." + runId + "@test.com");
         rider.setPhone("01055556666");
         rider.setPassword(passwordEncoder.encode("password123"));
         rider.setRole(UserRole.RIDER);
@@ -146,20 +155,26 @@ public class OrderJourneyIntegrationTest {
 
         // Create Restaurant
         RestaurantType type = new RestaurantType();
-        type.setName("Fast Food");
+        type.setName("Fast Food " + runId);
         type = restaurantTypeRepository.save(type);
 
         Restaurant restaurant = new Restaurant();
         restaurant.setOwner(owner);
         restaurant.setCity(city);
         restaurant.setType(type);
-        restaurant.setName("Test Burger");
+        restaurant.setName("Test Burger " + runId);
         restaurant.setAddress("Burger St");
         restaurant.setPhone("02-999-9999");
         restaurant.setMinimumOrderAmount(new BigDecimal("10000"));
         restaurant.setStatus(RestaurantStatus.OPEN);
         restaurant = restaurantRepository.save(restaurant);
         restaurantId = restaurant.getId();
+
+        // Create Restaurant Delivery Area
+        RestaurantDeliveryArea rda = new RestaurantDeliveryArea();
+        rda.setRestaurant(restaurant);
+        rda.setDeliveryArea(area);
+        restaurantDeliveryAreaRepository.save(rda);
 
         // Create Menu
         Category category = new Category();
@@ -186,6 +201,8 @@ public class OrderJourneyIntegrationTest {
         address.setPhone("01011112222");
         address = addressRepository.save(address);
         customerAddressId = address.getId();
+
+        seeded = true;
     }
 
     @Test
