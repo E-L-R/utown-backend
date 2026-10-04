@@ -231,7 +231,7 @@ public class RestaurantServiceImpl implements RestaurantService {
                         if (!currentTime.isBefore(today.getOpenTime()) && currentTime.isBefore(today.getCloseTime())) {
                             return true;
                         }
-                    } else {
+                    } else if (today.getOpenTime().isAfter(today.getCloseTime())) {
                         // overnight, e.g. 18:00 to 02:00
                         if (!currentTime.isBefore(today.getOpenTime())) {
                             return true;
@@ -263,7 +263,8 @@ public class RestaurantServiceImpl implements RestaurantService {
     }
 
     private RestaurantResponseDto toDto(Restaurant restaurant) {
-        boolean isOpenNow = isOpenAt(restaurant.getId(), ZonedDateTime.now());
+        boolean isOpenNow = restaurant.getStatus() == RestaurantStatus.OPEN
+                && isOpenAt(restaurant.getId(), ZonedDateTime.now());
         return new RestaurantResponseDto(
                 restaurant.getId(),
                 restaurant.getOwner().getId(),

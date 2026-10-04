@@ -362,6 +362,28 @@ class OrderServiceImplTest {
     }
 
     @Test
+    void createOrder_belowMinimumOrderAmount_throwsIllegalArgumentException() {
+        restaurant.setMinimumOrderAmount(BigDecimal.valueOf(50.00));
+        OrderItemRequestDto itemRequest = new OrderItemRequestDto(20L, 1, List.of());
+        OrderRequestDto orderRequest = new OrderRequestDto(
+                1L,
+                10L,
+                100L,
+                null,
+                PaymentMethod.CARD,
+                List.of(itemRequest)
+        );
+
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
+        when(restaurantRepository.findByIdAndDeletedAtIsNull(10L)).thenReturn(Optional.of(restaurant));
+        when(addressRepository.findByIdAndDeletedAtIsNull(100L)).thenReturn(Optional.of(address));
+        when(dishRepository.findByIdAndDeletedAtIsNull(20L)).thenReturn(Optional.of(dish1));
+
+        assertThrows(IllegalArgumentException.class, () -> orderService.createOrder(orderRequest));
+        verify(orderRepository, never()).save(any());
+    }
+
+    @Test
     void getOrderById_success() {
         Order o = createTestOrder(500L, OrderStatus.PENDING);
         OrderItem item = createTestOrderItem(600L, o);
