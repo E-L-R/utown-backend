@@ -144,6 +144,7 @@ public class OrderJourneyIntegrationTest {
 
         RiderProfile riderProfile = new RiderProfile();
         riderProfile.setUser(rider);
+        riderProfile.setTransportType(TransportType.MOTORCYCLE);
         riderProfile.setAvailability(true);
         riderProfile.setStatus(RiderStatus.ACTIVE);
         riderProfileRepository.save(riderProfile);
