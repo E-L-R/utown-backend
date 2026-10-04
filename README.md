@@ -146,6 +146,21 @@ docker compose down
 docker compose down -v
 ```
 
+### Running with Demo Data Seeder
+
+If you want to start the application with a pre-populated database (users, restaurants, menus, orders), you can enable the `demo` profile. The seeder is idempotent and will skip if it detects the admin user is already present.
+
+Start the containers by injecting `SPRING_PROFILES_ACTIVE=demo`:
+```bash
+SPRING_PROFILES_ACTIVE=demo docker compose up -d
+```
+
+**Demo Accounts (Password for all: `password123`)**:
+- Admin: `admin@demo.com`
+- Restaurant Owner: `owner@demo.com`
+- Customer: `customer@demo.com`
+- Rider: `rider@demo.com`
+
 ---
 
 ## Docker Verification Plan
