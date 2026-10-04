@@ -97,8 +97,10 @@ class OrderServiceImplTest {
     @BeforeEach
     void setUp() {
         if (meterRegistry != null) {
-            org.mockito.Mockito.lenient().when(meterRegistry.counter(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
-                  .thenReturn(counter);
+            org.mockito.Mockito.lenient().when(meterRegistry.counter(
+                org.mockito.ArgumentMatchers.anyString(), 
+                org.mockito.ArgumentMatchers.<String>any()
+            )).thenReturn(counter);
         }
         user = new User();
         user.setId(1L);
