@@ -31,4 +31,6 @@ public interface RestaurantService {
     );
 
     List<WorkingHoursDto> getWorkingHours(Long restaurantId);
+
+    boolean isOpenAt(Long restaurantId, java.time.ZonedDateTime zonedDateTime);
 }

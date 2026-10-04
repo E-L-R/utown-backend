@@ -10,7 +10,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.DayOfWeek;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZonedDateTime;
+import java.time.ZoneId;
 import java.util.List;
+import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -204,8 +208,62 @@ public class RestaurantServiceImpl implements RestaurantService {
 
 
 
+    @Override
+    public boolean isOpenAt(Long restaurantId, ZonedDateTime zonedDateTime) {
+        ZonedDateTime seoulTime = zonedDateTime.withZoneSameInstant(ZoneId.of("Asia/Seoul"));
+        DayOfWeek currentDay = seoulTime.getDayOfWeek();
+        LocalTime currentTime = seoulTime.toLocalTime();
+
+        List<RestaurantWorkingHours> allHours = workingHoursRepository.findByRestaurantId(restaurantId);
+        if (allHours.isEmpty()) {
+            return false;
+        }
+
+        Optional<RestaurantWorkingHours> todayHoursOpt = allHours.stream()
+                .filter(h -> h.getDayOfWeek() == currentDay)
+                .findFirst();
+
+        if (todayHoursOpt.isPresent()) {
+            RestaurantWorkingHours today = todayHoursOpt.get();
+            if (!today.isDayOff()) {
+                if (today.getOpenTime() != null && today.getCloseTime() != null) {
+                    if (today.getOpenTime().isBefore(today.getCloseTime())) {
+                        if (!currentTime.isBefore(today.getOpenTime()) && currentTime.isBefore(today.getCloseTime())) {
+                            return true;
+                        }
+                    } else {
+                        // overnight, e.g. 18:00 to 02:00
+                        if (!currentTime.isBefore(today.getOpenTime())) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        DayOfWeek previousDay = currentDay.minus(1);
+        Optional<RestaurantWorkingHours> yesterdayHoursOpt = allHours.stream()
+                .filter(h -> h.getDayOfWeek() == previousDay)
+                .findFirst();
+
+        if (yesterdayHoursOpt.isPresent()) {
+            RestaurantWorkingHours yesterday = yesterdayHoursOpt.get();
+            if (!yesterday.isDayOff()) {
+                if (yesterday.getOpenTime() != null && yesterday.getCloseTime() != null) {
+                    if (yesterday.getOpenTime().isAfter(yesterday.getCloseTime())) {
+                        if (currentTime.isBefore(yesterday.getCloseTime())) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
 
     private RestaurantResponseDto toDto(Restaurant restaurant) {
+        boolean isOpenNow = isOpenAt(restaurant.getId(), ZonedDateTime.now());
         return new RestaurantResponseDto(
                 restaurant.getId(),
                 restaurant.getOwner().getId(),
@@ -219,7 +277,8 @@ public class RestaurantServiceImpl implements RestaurantService {
                 restaurant.getLatitude(),
                 restaurant.getLongitude(),
                 restaurant.getMinimumOrderAmount(),
-                restaurant.getStatus()
+                restaurant.getStatus(),
+                isOpenNow
         );
     }
 }

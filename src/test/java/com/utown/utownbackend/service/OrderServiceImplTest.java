@@ -75,6 +75,9 @@ class OrderServiceImplTest {
     @Mock
     private SocketIONotificationService socketIONotificationService;
 
+    @Mock
+    private RestaurantService restaurantService;
+
     @InjectMocks
     private OrderServiceImpl orderService;
 
@@ -131,6 +134,7 @@ class OrderServiceImplTest {
 
         lenient().when(restaurantDeliveryAreaRepository.existsByRestaurantIdAndDeliveryAreaIdAndDeletedAtIsNull(any(), any()))
                 .thenReturn(true);
+        lenient().when(restaurantService.isOpenAt(anyLong(), any())).thenReturn(true);
     }
 
     @AfterEach

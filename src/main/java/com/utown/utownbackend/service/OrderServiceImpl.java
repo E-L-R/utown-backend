@@ -45,6 +45,7 @@ public class OrderServiceImpl implements OrderService {
     private final CartItemOptionRepository cartItemOptionRepository;
     private final RestaurantDeliveryAreaRepository restaurantDeliveryAreaRepository;
     private final SocketIONotificationService socketIONotificationService;
+    private final RestaurantService restaurantService;
 
     private record PreparedItem(
             Dish dish,
@@ -73,6 +74,10 @@ public class OrderServiceImpl implements OrderService {
 
         if (restaurant.getStatus() == RestaurantStatus.CLOSED) {
             throw new IllegalArgumentException("Cannot place order: Restaurant is closed");
+        }
+
+        if (!restaurantService.isOpenAt(restaurant.getId(), java.time.ZonedDateTime.now())) {
+            throw new IllegalArgumentException("Cannot place order: Restaurant is outside working hours");
         }
 
         Address address = addressRepository.findByIdAndDeletedAtIsNull(request.addressId())
@@ -401,6 +406,10 @@ public class OrderServiceImpl implements OrderService {
         Restaurant restaurant = cart.getRestaurant();
         if (restaurant.getStatus() == RestaurantStatus.CLOSED) {
             throw new IllegalArgumentException("Cannot place order: Restaurant is closed");
+        }
+
+        if (!restaurantService.isOpenAt(restaurant.getId(), java.time.ZonedDateTime.now())) {
+            throw new IllegalArgumentException("Cannot place order: Restaurant is outside working hours");
         }
 
         if (address.getDeliveryArea() == null || !restaurantDeliveryAreaRepository.existsByRestaurantIdAndDeliveryAreaIdAndDeletedAtIsNull(restaurant.getId(), address.getDeliveryArea().getId())) {

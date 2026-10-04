@@ -374,4 +374,39 @@ class RestaurantServiceImplTest {
                 .isInstanceOf(EntityNotFoundException.class);
         verify(workingHoursRepository, never()).findByRestaurantId(anyLong());
     }
+
+    @Test
+    @DisplayName("isOpenAt - normal hours")
+    void isOpenAt_normalHours() {
+        RestaurantWorkingHours hours = new RestaurantWorkingHours(restaurant, DayOfWeek.MONDAY, LocalTime.of(9, 0), LocalTime.of(22, 0), false);
+        when(workingHoursRepository.findByRestaurantId(1L)).thenReturn(List.of(hours));
+
+        java.time.ZonedDateTime openTime = java.time.ZonedDateTime.of(2023, 10, 16, 12, 0, 0, 0, java.time.ZoneId.of("Asia/Seoul")); // Monday 12:00
+        boolean resultOpen = restaurantService.isOpenAt(1L, openTime);
+        assertThat(resultOpen).isTrue();
+
+        java.time.ZonedDateTime closeTime = java.time.ZonedDateTime.of(2023, 10, 16, 23, 0, 0, 0, java.time.ZoneId.of("Asia/Seoul")); // Monday 23:00
+        boolean resultClose = restaurantService.isOpenAt(1L, closeTime);
+        assertThat(resultClose).isFalse();
+    }
+
+    @Test
+    @DisplayName("isOpenAt - overnight hours")
+    void isOpenAt_overnightHours() {
+        // Monday 18:00 to 02:00
+        RestaurantWorkingHours hours = new RestaurantWorkingHours(restaurant, DayOfWeek.MONDAY, LocalTime.of(18, 0), LocalTime.of(2, 0), false);
+        when(workingHoursRepository.findByRestaurantId(1L)).thenReturn(List.of(hours));
+
+        // Monday 20:00 (Open)
+        java.time.ZonedDateTime time1 = java.time.ZonedDateTime.of(2023, 10, 16, 20, 0, 0, 0, java.time.ZoneId.of("Asia/Seoul")); 
+        assertThat(restaurantService.isOpenAt(1L, time1)).isTrue();
+
+        // Tuesday 01:00 (Still open from Monday)
+        java.time.ZonedDateTime time2 = java.time.ZonedDateTime.of(2023, 10, 17, 1, 0, 0, 0, java.time.ZoneId.of("Asia/Seoul")); 
+        assertThat(restaurantService.isOpenAt(1L, time2)).isTrue();
+
+        // Tuesday 03:00 (Closed)
+        java.time.ZonedDateTime time3 = java.time.ZonedDateTime.of(2023, 10, 17, 3, 0, 0, 0, java.time.ZoneId.of("Asia/Seoul")); 
+        assertThat(restaurantService.isOpenAt(1L, time3)).isFalse();
+    }
 }
