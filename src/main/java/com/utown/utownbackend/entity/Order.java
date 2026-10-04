@@ -84,5 +84,7 @@ public class Order extends BaseEntity{
     @Column(name = "cancelled_at")
     private LocalDateTime cancelledAt;
 
+    @Version
+    private Long version;
 
 }
