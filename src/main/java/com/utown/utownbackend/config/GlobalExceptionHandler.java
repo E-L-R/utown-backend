@@ -34,8 +34,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problemDetail);
     }
 
-    @ExceptionHandler(com.utown.utownbackend.exception.ResourceConflictException.class)
-    public ResponseEntity<ProblemDetail> handleResourceConflict(com.utown.utownbackend.exception.ResourceConflictException ex) {
+    @ExceptionHandler({
+        com.utown.utownbackend.exception.ResourceConflictException.class,
+        com.utown.utownbackend.exception.InvalidOrderStatusTransitionException.class
+    })
+    public ResponseEntity<ProblemDetail> handleResourceConflict(RuntimeException ex) {
         log.warn("Resource conflict: {}", ex.getMessage());
 
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(

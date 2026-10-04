@@ -23,6 +23,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 import org.springframework.security.core.context.SecurityContextHolder;
+import com.utown.utownbackend.exception.InvalidOrderStatusTransitionException;
 
 @Service
 @Slf4j
@@ -333,25 +334,10 @@ public class OrderServiceImpl implements OrderService {
         Order order = orderRepository.findWithUserAndRestaurantOwnerById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Order not found with id: " + id));
 
-        if (order.getStatus() != OrderStatus.PENDING) {
-            throw new IllegalStateException("Order cannot be accepted from status: " + order.getStatus());
-        }
-
-        order.setStatus(OrderStatus.ACCEPTED);
-        order.setAcceptedAt(LocalDateTime.now());
         order.setEstimatedCookingMinutes(request.estimatedCookingMinutes());
-
-        Order savedOrder = orderRepository.save(order);
-        User actor = resolveActor(savedOrder);
-        recordStatusHistory(savedOrder, OrderStatus.ACCEPTED, actor,
+        
+        return transition(order, OrderStatus.ACCEPTED, resolveActor(order), 
                 "Estimated cooking time: " + request.estimatedCookingMinutes() + " mins");
-
-        OrderResponseDto response =
-                toOrderResponseDto(savedOrder, getOrderItemResponseDtos(savedOrder.getId()));
-
-        sendOrderStatusUpdate(savedOrder, response);
-
-        return response;
     }
 
     @Override
@@ -361,22 +347,7 @@ public class OrderServiceImpl implements OrderService {
         Order order = orderRepository.findWithUserAndRestaurantOwnerById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Order not found with id: " + id));
 
-        if (order.getStatus() != OrderStatus.ACCEPTED) {
-            throw new IllegalStateException("Order cannot be moved to preparation from status: " + order.getStatus());
-        }
-
-        order.setStatus(OrderStatus.IN_PREPARATION);
-
-        Order savedOrder = orderRepository.save(order);
-        User actor = resolveActor(savedOrder);
-        recordStatusHistory(savedOrder, OrderStatus.IN_PREPARATION, actor, null);
-
-        OrderResponseDto response =
-                toOrderResponseDto(savedOrder, getOrderItemResponseDtos(savedOrder.getId()));
-
-        sendOrderStatusUpdate(savedOrder, response);
-
-        return response;
+        return transition(order, OrderStatus.IN_PREPARATION, resolveActor(order), null);
     }
 
     @Override
@@ -386,21 +357,7 @@ public class OrderServiceImpl implements OrderService {
         Order order = orderRepository.findWithUserAndRestaurantOwnerById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Order not found with id: " + id));
 
-        if (order.getStatus() != OrderStatus.DELIVERED) {
-            throw new IllegalStateException("Order cannot be completed from status: " + order.getStatus());
-        }
-        order.setStatus(OrderStatus.COMPLETED);
-
-        Order savedOrder = orderRepository.save(order);
-        User actor = resolveActor(savedOrder);
-        recordStatusHistory(savedOrder, OrderStatus.COMPLETED, actor, null);
-
-        OrderResponseDto response =
-                toOrderResponseDto(savedOrder, getOrderItemResponseDtos(savedOrder.getId()));
-
-        sendOrderStatusUpdate(savedOrder, response);
-
-        return response;
+        return transition(order, OrderStatus.COMPLETED, resolveActor(order), null);
     }
 
     @Override
@@ -410,24 +367,7 @@ public class OrderServiceImpl implements OrderService {
         Order order = orderRepository.findWithUserAndRestaurantOwnerById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Order not found with id: " + id));
 
-        if (order.getStatus() != OrderStatus.PENDING) {
-            throw new IllegalStateException("Order cannot be declined from status: " + order.getStatus());
-        }
-
-        order.setStatus(OrderStatus.DECLINED);
-        order.setRejectedAt(LocalDateTime.now());
-        order.setRejectionReason(request.reason());
-
-        Order savedOrder = orderRepository.save(order);
-        User actor = resolveActor(savedOrder);
-        recordStatusHistory(savedOrder, OrderStatus.DECLINED, actor, request.reason());
-
-        OrderResponseDto response =
-                toOrderResponseDto(savedOrder, getOrderItemResponseDtos(savedOrder.getId()));
-
-        sendOrderStatusUpdate(savedOrder, response);
-
-        return response;
+        return transition(order, OrderStatus.DECLINED, resolveActor(order), request.reason());
     }
 
     @Override
@@ -624,23 +564,7 @@ public class OrderServiceImpl implements OrderService {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Order not found with id: " + id));
 
-        if (order.getStatus() != OrderStatus.IN_PREPARATION) {
-            throw new IllegalStateException("Order cannot be marked ready for pickup from status: " + order.getStatus());
-        }
-
-        order.setStatus(OrderStatus.READY_FOR_PICKUP);
-        order.setReadyAt(LocalDateTime.now());
-
-        Order savedOrder = orderRepository.save(order);
-        User actor = resolveActor(savedOrder);
-        recordStatusHistory(savedOrder, OrderStatus.READY_FOR_PICKUP, actor, null);
-
-        OrderResponseDto response =
-                toOrderResponseDto(savedOrder, getOrderItemResponseDtos(savedOrder.getId()));
-
-        sendOrderStatusUpdate(savedOrder, response);
-
-        return response;
+        return transition(order, OrderStatus.READY_FOR_PICKUP, resolveActor(order), null);
     }
 
     @Override
@@ -649,27 +573,11 @@ public class OrderServiceImpl implements OrderService {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Order not found with id: " + id));
 
-        if (order.getStatus() != OrderStatus.PENDING) {
-            throw new IllegalStateException("Order cannot be cancelled from status: " + order.getStatus());
-        }
-
-        order.setStatus(OrderStatus.CANCELLED);
-        order.setCancelledAt(LocalDateTime.now());
-        order.setRejectionReason(request.reason());
         if (order.getPaymentStatus() == PaymentStatus.PAID) {
             order.setPaymentStatus(PaymentStatus.REFUNDED);
         }
 
-        Order savedOrder = orderRepository.save(order);
-        User actor = order.getUser();
-        recordStatusHistory(savedOrder, OrderStatus.CANCELLED, actor, request.reason());
-
-        OrderResponseDto response =
-                toOrderResponseDto(savedOrder, getOrderItemResponseDtos(savedOrder.getId()));
-
-        sendOrderStatusUpdate(savedOrder, response);
-
-        return response;
+        return transition(order, OrderStatus.CANCELLED, order.getUser(), request.reason());
     }
 
     private User resolveActor(Order order) {
@@ -789,5 +697,44 @@ public class OrderServiceImpl implements OrderService {
                 order.getCancelledAt(),
                 items
         );
+    }
+    @Override
+    @Transactional
+    public OrderResponseDto transitionOrderStatus(Long orderId, OrderStatus targetStatus, User actor, String reason) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new EntityNotFoundException("Order not found with id: " + orderId));
+        return transition(order, targetStatus, actor, reason);
+    }
+
+    private OrderResponseDto transition(Order order, OrderStatus targetStatus, User actor, String reason) {
+        if (!order.getStatus().canTransitionTo(targetStatus)) {
+            throw new InvalidOrderStatusTransitionException(order.getStatus(), targetStatus);
+        }
+        order.setStatus(targetStatus);
+
+        LocalDateTime now = LocalDateTime.now();
+        switch (targetStatus) {
+            case ACCEPTED -> order.setAcceptedAt(now);
+            case READY_FOR_PICKUP -> order.setReadyAt(now);
+            case OUT_FOR_DELIVERY -> order.setPickedUpAt(now);
+            case DELIVERED -> order.setDeliveredAt(now);
+            case DECLINED -> {
+                order.setRejectedAt(now);
+                order.setRejectionReason(reason);
+            }
+            case CANCELLED -> {
+                order.setCancelledAt(now);
+                order.setRejectionReason(reason);
+            }
+            default -> {}
+        }
+
+        Order savedOrder = orderRepository.save(order);
+        recordStatusHistory(savedOrder, targetStatus, actor, reason);
+
+        OrderResponseDto response = toOrderResponseDto(savedOrder, getOrderItemResponseDtos(savedOrder.getId()));
+        sendOrderStatusUpdate(savedOrder, response);
+
+        return response;
     }
 }

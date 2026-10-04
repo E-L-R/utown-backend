@@ -39,6 +39,9 @@ class DeliveryAssignmentServiceImplTest {
     @Mock
     private RiderProfileRepository riderProfileRepository;
 
+    @Mock
+    private OrderService orderService;
+
     @InjectMocks
     private DeliveryAssignmentServiceImpl deliveryAssignmentService;
 
@@ -290,8 +293,7 @@ class DeliveryAssignmentServiceImplTest {
 
             assertThat(response.status()).isEqualTo(DeliveryAssignmentStatus.PICKED_UP);
             assertThat(response.pickedUpAt()).isNotNull();
-            assertThat(order.getPickedUpAt()).isNotNull();
-            verify(orderRepository).save(order);
+            verify(orderService).transitionOrderStatus(eq(order.getId()), eq(OrderStatus.OUT_FOR_DELIVERY), eq(riderUser), anyString());
         }
 
         @Test
@@ -319,11 +321,9 @@ class DeliveryAssignmentServiceImplTest {
 
             assertThat(response.status()).isEqualTo(DeliveryAssignmentStatus.DELIVERED);
             assertThat(response.deliveredAt()).isNotNull();
-            assertThat(order.getStatus()).isEqualTo(OrderStatus.DELIVERED);
-            assertThat(order.getDeliveredAt()).isNotNull();
             assertThat(riderProfile.getAvailability()).isTrue();
 
-            verify(orderRepository).save(order);
+            verify(orderService).transitionOrderStatus(eq(order.getId()), eq(OrderStatus.DELIVERED), eq(riderUser), anyString());
             verify(riderProfileRepository).save(riderProfile);
         }
 
@@ -343,6 +343,7 @@ class DeliveryAssignmentServiceImplTest {
             assertThat(response.status()).isEqualTo(DeliveryAssignmentStatus.DELIVERED);
             assertThat(riderProfile.getAvailability()).isFalse();
             verify(riderProfileRepository, never()).save(riderProfile);
+            verify(orderService).transitionOrderStatus(eq(order.getId()), eq(OrderStatus.DELIVERED), eq(riderUser), anyString());
         }
 
         @Test

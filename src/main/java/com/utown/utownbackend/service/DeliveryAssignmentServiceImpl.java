@@ -32,6 +32,7 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
     private final DeliveryAssignmentRepository deliveryAssignmentRepository;
     private final OrderRepository orderRepository;
     private final RiderProfileRepository riderProfileRepository;
+    private final OrderService orderService;
 
     @Override
     public DeliveryAssignmentResponseDto createAssignment(DeliveryAssignmentRequestDto request) {
@@ -150,13 +151,12 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
         assignment.setStatus(DeliveryAssignmentStatus.PICKED_UP);
         assignment.setPickedUpAt(LocalDateTime.now());
 
-        Order order = assignment.getOrder();
-        if (order != null) {
-            order.setPickedUpAt(LocalDateTime.now());
-            orderRepository.save(order);
+        DeliveryAssignment saved = deliveryAssignmentRepository.save(assignment);
+
+        if (assignment.getOrder() != null) {
+            orderService.transitionOrderStatus(assignment.getOrder().getId(), OrderStatus.OUT_FOR_DELIVERY, assignment.getRider().getUser(), "Rider picked up order");
         }
 
-        DeliveryAssignment saved = deliveryAssignmentRepository.save(assignment);
         log.info("Rider picked up order for delivery assignment ID: {}", id);
         return mapToResponseDto(saved);
     }
@@ -174,11 +174,10 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
         assignment.setStatus(DeliveryAssignmentStatus.DELIVERED);
         assignment.setDeliveredAt(LocalDateTime.now());
 
-        Order order = assignment.getOrder();
-        if (order != null) {
-            order.setStatus(OrderStatus.DELIVERED);
-            order.setDeliveredAt(LocalDateTime.now());
-            orderRepository.save(order);
+        DeliveryAssignment saved = deliveryAssignmentRepository.save(assignment);
+
+        if (assignment.getOrder() != null) {
+            orderService.transitionOrderStatus(assignment.getOrder().getId(), OrderStatus.DELIVERED, assignment.getRider().getUser(), "Order delivered");
         }
 
         RiderProfile rider = assignment.getRider();
@@ -187,7 +186,6 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
             riderProfileRepository.save(rider);
         }
 
-        DeliveryAssignment saved = deliveryAssignmentRepository.save(assignment);
         log.info("Delivery completed for assignment ID: {}", id);
         return mapToResponseDto(saved);
     }
