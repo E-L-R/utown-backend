@@ -230,6 +230,18 @@ If developing locally without Docker, you can connect to an existing MySQL insta
 
 ---
 
+## API Documentation (Swagger)
+
+Interactive OpenAPI / Swagger documentation is available when the application is running. You can browse all available endpoints, explore schemas, and execute API requests directly from the browser.
+
+* **Swagger UI**: [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
+* **OpenAPI JSON**: [http://localhost:8080/v3/api-docs](http://localhost:8080/v3/api-docs)
+
+> [!TIP]
+> After logging in via the `/api/auth/login` endpoint, click the **Authorize** button in Swagger UI and enter your JWT token to access secured endpoints.
+
+---
+
 ## API Quick Reference
 
 ### Authentication Endpoints (`/api/auth`)
