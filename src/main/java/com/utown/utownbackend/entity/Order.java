@@ -87,4 +87,7 @@ public class Order extends BaseEntity{
     @Column(name = "payment_transaction_id", length = 100)
     private String paymentTransactionId;
 
+    @Column(name = "refund_transaction_id", length = 100)
+    private String refundTransactionId;
+
 }

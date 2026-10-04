@@ -221,6 +221,34 @@ class OrderServiceImplTest {
     }
 
     @Test
+    void createOrder_paymentFailed_throwsPaymentFailedException() {
+        OrderItemRequestDto itemRequest = new OrderItemRequestDto(20L, 2, List.of(40L));
+        OrderRequestDto orderRequest = new OrderRequestDto(
+                1L,
+                10L,
+                100L,
+                "Ring bell",
+                PaymentMethod.CARD,
+                List.of(itemRequest)
+        );
+
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
+        when(restaurantRepository.findByIdAndDeletedAtIsNull(10L)).thenReturn(Optional.of(restaurant));
+        when(addressRepository.findByIdAndDeletedAtIsNull(100L)).thenReturn(Optional.of(address));
+        when(dishRepository.findByIdAndDeletedAtIsNull(20L)).thenReturn(Optional.of(dish1));
+        when(dishOptionRepository.findByIdAndDeletedAtIsNull(40L)).thenReturn(Optional.of(option1));
+        when(paymentGateway.charge(any(Order.class), any(BigDecimal.class)))
+                .thenReturn(new com.utown.utownbackend.dto.PaymentResult(false, null, "Card declined"));
+
+        com.utown.utownbackend.exception.PaymentFailedException exception = assertThrows(
+                com.utown.utownbackend.exception.PaymentFailedException.class,
+                () -> orderService.createOrder(orderRequest)
+        );
+        assertEquals("Payment failed: Card declined", exception.getMessage());
+        verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    @Test
     void createOrder_userNotFound_throwsEntityNotFound() {
         OrderRequestDto orderRequest = new OrderRequestDto(
                 999L,
@@ -676,7 +704,10 @@ class OrderServiceImplTest {
         when(paymentGateway.charge(any(Order.class), any(BigDecimal.class)))
                 .thenReturn(new com.utown.utownbackend.dto.PaymentResult(false, null, "Insufficient funds"));
 
-        IllegalStateException exception = assertThrows(IllegalStateException.class, () -> orderService.checkout(request));
+        com.utown.utownbackend.exception.PaymentFailedException exception = assertThrows(
+                com.utown.utownbackend.exception.PaymentFailedException.class,
+                () -> orderService.checkout(request)
+        );
         assertEquals("Payment failed: Insufficient funds", exception.getMessage());
         verify(paymentGateway).charge(any(Order.class), any(BigDecimal.class));
         verify(orderRepository, never()).save(any(Order.class));
@@ -812,6 +843,7 @@ class OrderServiceImplTest {
         assertEquals("Customer changed their mind", response.rejectionReason());
         assertNotNull(response.cancelledAt());
         assertEquals(PaymentStatus.REFUNDED, response.paymentStatus());
+        assertEquals("ref_123", o.getRefundTransactionId());
         verify(paymentGateway).refund(any(Order.class), eq("txn_123"));
         verify(orderRepository).save(o);
         verify(orderStatusHistoryRepository).save(any(OrderStatusHistory.class));
@@ -819,12 +851,38 @@ class OrderServiceImplTest {
     }
 
     @Test
-    void cancelOrder_notPending_throwsIllegalStateException() {
+    void cancelOrder_refundFails_throwsPaymentFailedException() {
+        Order o = createTestOrder(500L, OrderStatus.PENDING);
+        o.setPaymentStatus(PaymentStatus.PAID);
+        o.setPaymentTransactionId("txn_123");
+
+        when(orderRepository.findById(500L)).thenReturn(Optional.of(o));
+        when(paymentGateway.refund(any(Order.class), eq("txn_123")))
+                .thenReturn(new com.utown.utownbackend.dto.PaymentResult(false, null, "Refund gateway down"));
+
+        OrderCancelRequestDto request = new OrderCancelRequestDto("Customer changed their mind");
+        com.utown.utownbackend.exception.PaymentFailedException ex = assertThrows(
+                com.utown.utownbackend.exception.PaymentFailedException.class,
+                () -> orderService.cancelOrder(500L, request)
+        );
+        assertEquals("Refund failed: Refund gateway down", ex.getMessage());
+
+        assertEquals(PaymentStatus.PAID, o.getPaymentStatus());
+        assertNull(o.getRefundTransactionId());
+        assertEquals(OrderStatus.PENDING, o.getStatus());
+        verify(orderRepository, never()).save(o);
+    }
+
+    @Test
+    void cancelOrder_notPending_throwsIllegalStateExceptionAndDoesNotRefund() {
         Order o = createTestOrder(500L, OrderStatus.IN_PREPARATION);
+        o.setPaymentStatus(PaymentStatus.PAID);
+        o.setPaymentTransactionId("txn_123");
         when(orderRepository.findById(500L)).thenReturn(Optional.of(o));
 
         OrderCancelRequestDto request = new OrderCancelRequestDto("Changed mind");
         assertThrows(IllegalStateException.class, () -> orderService.cancelOrder(500L, request));
+        verify(paymentGateway, never()).refund(any(Order.class), anyString());
         verify(orderRepository, never()).save(o);
     }
 

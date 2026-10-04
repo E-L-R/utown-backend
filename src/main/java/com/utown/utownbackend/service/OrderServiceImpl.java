@@ -24,6 +24,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 import org.springframework.security.core.context.SecurityContextHolder;
 import com.utown.utownbackend.exception.InvalidOrderStatusTransitionException;
+import com.utown.utownbackend.exception.PaymentFailedException;
 
 @Service
 @Slf4j
@@ -193,7 +194,7 @@ public class OrderServiceImpl implements OrderService {
             PaymentResult paymentResult = paymentGateway.charge(order, order.getTotalAmount());
             if (!paymentResult.success()) {
                 order.setPaymentStatus(PaymentStatus.FAILED);
-                throw new IllegalStateException("Payment failed: " + paymentResult.message());
+                throw new PaymentFailedException("Payment failed: " + paymentResult.message());
             }
             order.setPaymentStatus(PaymentStatus.PAID);
             order.setPaymentTransactionId(paymentResult.transactionId());
@@ -521,7 +522,7 @@ public class OrderServiceImpl implements OrderService {
             PaymentResult paymentResult = paymentGateway.charge(order, order.getTotalAmount());
             if (!paymentResult.success()) {
                 order.setPaymentStatus(PaymentStatus.FAILED);
-                throw new IllegalStateException("Payment failed: " + paymentResult.message());
+                throw new PaymentFailedException("Payment failed: " + paymentResult.message());
             }
             order.setPaymentStatus(PaymentStatus.PAID);
             order.setPaymentTransactionId(paymentResult.transactionId());
@@ -594,16 +595,22 @@ public class OrderServiceImpl implements OrderService {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Order not found with id: " + id));
 
+        if (!order.getStatus().canTransitionTo(OrderStatus.CANCELLED)) {
+            throw new InvalidOrderStatusTransitionException(order.getStatus(), OrderStatus.CANCELLED);
+        }
+
         if (order.getPaymentStatus() == PaymentStatus.PAID) {
             if (order.getPaymentTransactionId() != null) {
                 PaymentResult refundResult = paymentGateway.refund(order, order.getPaymentTransactionId());
                 if (!refundResult.success()) {
                     log.error("Refund failed for order {}: {}", order.getId(), refundResult.message());
-                    // We log the error but still cancel the order for now, 
-                    // in a real system we might queue a retry or throw an exception.
+                    throw new PaymentFailedException("Refund failed: " + refundResult.message());
                 }
+                order.setPaymentStatus(PaymentStatus.REFUNDED);
+                order.setRefundTransactionId(refundResult.transactionId());
+            } else {
+                order.setPaymentStatus(PaymentStatus.REFUNDED);
             }
-            order.setPaymentStatus(PaymentStatus.REFUNDED);
         }
 
         return transition(order, OrderStatus.CANCELLED, order.getUser(), request.reason());
