@@ -5,7 +5,7 @@ import com.utown.utownbackend.service.RateLimitingService;
 import io.github.bucket4j.Bucket;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -16,10 +16,13 @@ import org.springframework.web.servlet.HandlerInterceptor;
 import java.util.List;
 
 @Component
-@RequiredArgsConstructor
 public class RateLimitInterceptor implements HandlerInterceptor {
 
     private final RateLimitingService rateLimitingService;
+
+    public RateLimitInterceptor(@Autowired(required = false) RateLimitingService rateLimitingService) {
+        this.rateLimitingService = rateLimitingService;
+    }
 
     @Value("${rate-limiting.trusted-proxies:}")
     private List<String> trustedProxies;
@@ -29,6 +32,9 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        if (rateLimitingService == null) {
+            return true;
+        }
         String clientIp = getClientIP(request);
         String requestURI = request.getRequestURI();
         String method = request.getMethod();
