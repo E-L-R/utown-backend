@@ -140,14 +140,14 @@ public class OrderJourneyIntegrationTest {
         rider.setName("Rider User");
         rider.setStatus(UserStatus.ACTIVE);
         rider = userRepository.save(rider);
-        riderId = rider.getId();
 
         RiderProfile riderProfile = new RiderProfile();
         riderProfile.setUser(rider);
         riderProfile.setTransportType(TransportType.MOTORCYCLE);
         riderProfile.setAvailability(true);
         riderProfile.setStatus(RiderStatus.ACTIVE);
-        riderProfileRepository.save(riderProfile);
+        riderProfile = riderProfileRepository.save(riderProfile);
+        riderId = riderProfile.getId();
 
         // Generate Tokens
         customerToken = jwtUtil.generateToken(new CustomUserDetails(customer));
