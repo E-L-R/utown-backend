@@ -3,6 +3,9 @@ package com.utown.utownbackend.service;
 import com.utown.utownbackend.dto.*;
 import java.time.DayOfWeek;
 import java.util.List;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
 
 public interface RestaurantService {
 
@@ -33,4 +36,6 @@ public interface RestaurantService {
     List<WorkingHoursDto> getWorkingHours(Long restaurantId);
 
     boolean isOpenAt(Long restaurantId, java.time.ZonedDateTime zonedDateTime);
+
+    RestaurantResponseDto uploadRestaurantLogo(Long id, MultipartFile file) throws IOException;
 }
