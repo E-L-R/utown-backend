@@ -24,6 +24,16 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 public class AuthController {
 
     private final AuthService authService;
+    private final com.utown.utownbackend.service.UserService userService;
+
+    @org.springframework.web.bind.annotation.GetMapping("/me")
+    @org.springframework.security.access.prepost.PreAuthorize("isAuthenticated()")
+    public ResponseEntity<com.utown.utownbackend.dto.UserProfileResponseDto> getCurrentUser(java.security.Principal principal) {
+        if (principal == null) {
+            throw new IllegalArgumentException("Authentication required");
+        }
+        return ResponseEntity.ok(userService.getCurrentUserProfile(principal.getName()));
+    }
 
     @Operation(summary = "Register")
     @PostMapping("/register")
