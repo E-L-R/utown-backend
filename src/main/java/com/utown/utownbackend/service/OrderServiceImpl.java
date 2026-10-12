@@ -623,6 +623,8 @@ public class OrderServiceImpl implements OrderService {
                 response
         );
 
+        meterRegistry.counter("orders.created", "restaurantId", restaurant.getId().toString()).increment();
+
         return response;
     }
 
@@ -647,6 +649,7 @@ public class OrderServiceImpl implements OrderService {
                 toOrderResponseDto(savedOrder, getOrderItemResponseDtos(savedOrder.getId()));
 
         sendOrderStatusUpdate(savedOrder, response);
+        meterRegistry.counter("orders.status.changed", "status", "READY_FOR_PICKUP").increment();
 
         return response;
     }
@@ -676,6 +679,7 @@ public class OrderServiceImpl implements OrderService {
                 toOrderResponseDto(savedOrder, getOrderItemResponseDtos(savedOrder.getId()));
 
         sendOrderStatusUpdate(savedOrder, response);
+        meterRegistry.counter("orders.status.changed", "status", "CANCELLED").increment();
 
         return response;
     }

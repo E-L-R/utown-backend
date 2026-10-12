@@ -654,6 +654,7 @@ class OrderServiceImplTest {
         verify(cartRepository).save(cart);
         verify(orderStatusHistoryRepository).save(any(OrderStatusHistory.class));
         verify(socketIONotificationService).sendNewOrder(99L, response);
+        verify(meterRegistry).counter("orders.created", "restaurantId", "10");
     }
 
     @Test
@@ -785,6 +786,7 @@ class OrderServiceImplTest {
         verify(orderRepository).save(o);
         verify(orderStatusHistoryRepository).save(any(OrderStatusHistory.class));
         verify(socketIONotificationService).sendOrderStatusUpdated(1L, response);
+        verify(meterRegistry).counter("orders.status.changed", "status", "CANCELLED");
     }
 
     @Test
@@ -815,6 +817,7 @@ class OrderServiceImplTest {
         verify(orderRepository).save(o);
         verify(orderStatusHistoryRepository).save(any(OrderStatusHistory.class));
         verify(socketIONotificationService).sendOrderStatusUpdated(1L, response);
+        verify(meterRegistry).counter("orders.status.changed", "status", "READY_FOR_PICKUP");
     }
 
     @Test
