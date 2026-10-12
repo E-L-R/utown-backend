@@ -171,4 +171,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .status(HttpStatus.FORBIDDEN)
                 .body(problemDetail);
     }
+
+    @ExceptionHandler(com.utown.utownbackend.exception.RateLimitExceededException.class)
+    public ResponseEntity<ProblemDetail> handleRateLimitExceeded(com.utown.utownbackend.exception.RateLimitExceededException ex) {
+        log.warn("Rate limit exceeded: {}", ex.getMessage());
+
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
+        problemDetail.setTitle("Too Many Requests");
+
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(problemDetail);
+    }
 }
