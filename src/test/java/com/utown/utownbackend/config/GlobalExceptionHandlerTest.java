@@ -110,12 +110,26 @@ class GlobalExceptionHandlerTest {
         }
     }
 
+    @Test
+    @DisplayName("RateLimitExceededException should return 429 with ProblemDetail")
+    void rateLimitExceeded_shouldReturn429() throws Exception {
+        mockMvc.perform(get("/test/rate-limit-exceeded"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.title").value("Too Many Requests"))
+                .andExpect(jsonPath("$.detail").value("Too many requests. Please try again later."));
+    }
+
     /**
      * Stub controller used only for testing exception handler mappings.
      */
     @RestController
     @RequestMapping("/test")
     public static class StubController {
+
+        @GetMapping("/rate-limit-exceeded")
+        public void rateLimitExceeded() {
+            throw new com.utown.utownbackend.exception.RateLimitExceededException("Too many requests. Please try again later.");
+        }
 
         @GetMapping("/entity-not-found")
         public void entityNotFound() {
