@@ -21,6 +21,16 @@ import lombok.extern.slf4j.Slf4j;
 public class AuthController {
 
     private final AuthService authService;
+    private final com.utown.utownbackend.service.UserService userService;
+
+    @org.springframework.web.bind.annotation.GetMapping("/me")
+    @org.springframework.security.access.prepost.PreAuthorize("isAuthenticated()")
+    public ResponseEntity<com.utown.utownbackend.dto.UserProfileResponseDto> getCurrentUser(java.security.Principal principal) {
+        if (principal == null) {
+            throw new IllegalArgumentException("Authentication required");
+        }
+        return ResponseEntity.ok(userService.getCurrentUserProfile(principal.getName()));
+    }
 
     @PostMapping("/register")
     public ResponseEntity<AuthResponseDto> register(@Valid @RequestBody RegisterRequestDto request) {
