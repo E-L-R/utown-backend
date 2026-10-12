@@ -36,13 +36,38 @@ The UTown backend powers a multi-role food delivery platform servicing customers
 | **Security** | Spring Security, Stateless JWT (`jjwt` 0.12.6), BCrypt |
 | **Data & Persistence** | Spring Data JPA, Hibernate, MySQL Connector/J |
 | **Database** | MySQL 8.4 (with `utf8mb4` encoding and `Asia/Seoul` timezone) |
-| **Testing** | JUnit 5, Mockito, Spring Boot Test, H2 In-Memory DB |
+| **Caching & Rate Limiting** | Redis Cache, Advanced Search & Rate Limiter |
+| **Real-Time** | Socket.IO Notifications (`netty-socketio-core`) |
+| **Storage** | AWS S3 Storage (for media/images) |
+| **Documentation** | OpenAPI 3 / Swagger UI (`springdoc`) |
+| **Testing** | JUnit 5, Mockito, Spring Boot Test, H2 In-Memory DB, Testcontainers |
 | **Build Tool** | Apache Maven 3.9 (via `mvnw` wrapper) |
 | **Containerization** | Docker (Multi-stage Alpine build), Docker Compose v2+ |
 
 ---
 
 ## Architecture & Key Features
+
+### Architecture Overview
+The system relies on a scalable Spring Boot monolith supported by real-time WebSockets, persistent storage, and caching layers.
+
+```mermaid
+graph TD
+    Client[Web/Mobile Clients] --> API[Spring Boot REST API]
+    Client <--> Socket[Socket.IO Server]
+    
+    API --> Security[Spring Security & JWT]
+    API --> RateLimiter[Rate Limiter]
+    
+    API --> ServiceLayer[Business Logic]
+    ServiceLayer --> Repository[Spring Data JPA]
+    
+    Repository --> MySQL[(MySQL 8.4 Database)]
+    ServiceLayer --> Redis[(Redis Cache)]
+    ServiceLayer --> S3[AWS S3 Storage]
+    ServiceLayer --> Socket
+```
+*Note: The complete detailed Entity-Relationship Diagram can be found in `UTOWN_ERD.drawio` (which can be exported to image via draw.io).*
 
 * **Stateless Authentication (AuthN)**:
   * Primary identifier: User phone number (standardized with `+82` country code for South Korea).
@@ -109,6 +134,8 @@ cp .env.example .env
 | `APP_PORT` | `8080` | Port exposed by the Spring Boot container on the host |
 | `SERVER_ADDRESS` | `0.0.0.0` (Docker) / `127.0.0.1` (Local) | Server binding IP |
 | `SPRING_JPA_HIBERNATE_DDL_AUTO` | `update` | Hibernate schema management strategy |
+| `SOCKETIO_HOST` | `0.0.0.0` | Binding interface for the Socket.IO server |
+| `SOCKETIO_PORT` | `9092` | Port used by Socket.IO for real-time notifications |
 | `JWT_SECRET` | `404E635...` | Base64 or plaintext secret (must be >= 32 bytes) |
 | `JWT_EXPIRATION` | `86400000` | Access token lifespan in milliseconds (24 hours) |
 
@@ -146,20 +173,27 @@ docker compose down
 docker compose down -v
 ```
 
-### Running with Demo Data Seeder
+### Running with Demo Data Seeder (Demo Walkthrough)
 
 If you want to start the application with a pre-populated database (users, restaurants, menus, orders), you can enable the `demo` profile. The seeder is idempotent and will skip if it detects the admin user is already present.
 
-Start the containers by injecting `SPRING_PROFILES_ACTIVE=demo`:
-```bash
-SPRING_PROFILES_ACTIVE=demo docker compose up -d
-```
+1. **Start the demo environment**: Run `SPRING_PROFILES_ACTIVE=demo docker compose up -d`
+2. **Access Swagger UI**: Navigate to [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
 
 **Demo Accounts (Password for all: `password123`)**:
-- Admin: `admin@demo.com`
-- Restaurant Owner: `owner@demo.com`
-- Customer: `customer@demo.com`
-- Rider: `rider@demo.com`
+- Admin: `admin@demo.com` (Phone: `01000000000`)
+- Restaurant Owner: `owner@demo.com` (Phone: `01022222222`)
+- Customer: `customer@demo.com` (Phone: `01011111111`)
+- Rider: `rider@demo.com` (Phone: `01033333333`)
+
+3. **Login as Customer**: 
+   - Expand `POST /api/auth/login` in Swagger
+   - Use payload: `{"phone": "01011111111", "password": "password123"}`
+   - Execute and copy the `token` from the response.
+4. **Authorize**: Scroll to the top of Swagger UI, click **Authorize**, paste your token, and click Login.
+5. **Create an Order**:
+   - Expand `POST /api/orders`
+   - You can now place an order for the pre-seeded restaurant and dishes.
 
 ---
 
