@@ -213,11 +213,80 @@ class OrderServiceImplTest {
         assertEquals("Extra Cheese", optDto.optionName());
         assertEquals(BigDecimal.valueOf(2.50), optDto.optionPrice());
 
-        verify(orderRepository).save(any(Order.class));
+        // Saved once on creation and once more after the charge marks it PAID.
+        verify(orderRepository, times(2)).save(any(Order.class));
         verify(orderItemRepository).save(any(OrderItem.class));
         verify(orderItemOptionRepository).save(any(OrderItemOption.class));
         verify(orderStatusHistoryRepository).save(any(OrderStatusHistory.class));
         verify(socketIONotificationService).sendNewOrder(99L, response);
+    }
+
+    @Test
+    void createOrder_chargesGatewayWithPersistedOrderId() {
+        OrderRequestDto orderRequest = new OrderRequestDto(
+                1L, 10L, 100L, null, PaymentMethod.CARD,
+                List.of(new OrderItemRequestDto(20L, 2, List.of(40L))));
+
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
+        when(restaurantRepository.findByIdAndDeletedAtIsNull(10L)).thenReturn(Optional.of(restaurant));
+        when(addressRepository.findByIdAndDeletedAtIsNull(100L)).thenReturn(Optional.of(address));
+        when(dishRepository.findByIdAndDeletedAtIsNull(20L)).thenReturn(Optional.of(dish1));
+        when(dishOptionRepository.findByIdAndDeletedAtIsNull(40L)).thenReturn(Optional.of(option1));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> {
+            Order o = inv.getArgument(0);
+            o.setId(500L);
+            return o;
+        });
+        when(orderItemRepository.save(any(OrderItem.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(orderItemOptionRepository.save(any(OrderItemOption.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(paymentGateway.charge(any(Order.class), any(BigDecimal.class))).thenAnswer(inv -> {
+            Order charged = inv.getArgument(0);
+            assertEquals(500L, charged.getId(), "Order must be persisted before it is charged");
+            return new com.utown.utownbackend.dto.PaymentResult(true, "txn_123", "Success");
+        });
+
+        orderService.createOrder(orderRequest);
+
+        var inOrder = inOrder(orderItemRepository, paymentGateway);
+        inOrder.verify(orderItemRepository).save(any(OrderItem.class));
+        inOrder.verify(paymentGateway).charge(any(Order.class), any(BigDecimal.class));
+    }
+
+    @Test
+    void createOrder_rollbackAfterCharge_issuesCompensatingRefund() {
+        OrderRequestDto orderRequest = new OrderRequestDto(
+                1L, 10L, 100L, null, PaymentMethod.CARD,
+                List.of(new OrderItemRequestDto(20L, 2, List.of(40L))));
+
+        when(userRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
+        when(restaurantRepository.findByIdAndDeletedAtIsNull(10L)).thenReturn(Optional.of(restaurant));
+        when(addressRepository.findByIdAndDeletedAtIsNull(100L)).thenReturn(Optional.of(address));
+        when(dishRepository.findByIdAndDeletedAtIsNull(20L)).thenReturn(Optional.of(dish1));
+        when(dishOptionRepository.findByIdAndDeletedAtIsNull(40L)).thenReturn(Optional.of(option1));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(orderItemRepository.save(any(OrderItem.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(orderItemOptionRepository.save(any(OrderItemOption.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(paymentGateway.charge(any(Order.class), any(BigDecimal.class)))
+                .thenReturn(new com.utown.utownbackend.dto.PaymentResult(true, "txn_123", "Success"));
+        when(paymentGateway.refund(any(Order.class), eq("txn_123")))
+                .thenReturn(new com.utown.utownbackend.dto.PaymentResult(true, "ref_1", "Refund Success"));
+
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            orderService.createOrder(orderRequest);
+            var syncs = org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations();
+            assertEquals(1, syncs.size());
+
+            // Committed transaction: no refund.
+            syncs.get(0).afterCompletion(org.springframework.transaction.support.TransactionSynchronization.STATUS_COMMITTED);
+            verify(paymentGateway, never()).refund(any(Order.class), anyString());
+
+            // Rolled-back transaction: the charge is compensated.
+            syncs.get(0).afterCompletion(org.springframework.transaction.support.TransactionSynchronization.STATUS_ROLLED_BACK);
+            verify(paymentGateway).refund(any(Order.class), eq("txn_123"));
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test
@@ -237,6 +306,9 @@ class OrderServiceImplTest {
         when(addressRepository.findByIdAndDeletedAtIsNull(100L)).thenReturn(Optional.of(address));
         when(dishRepository.findByIdAndDeletedAtIsNull(20L)).thenReturn(Optional.of(dish1));
         when(dishOptionRepository.findByIdAndDeletedAtIsNull(40L)).thenReturn(Optional.of(option1));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(orderItemRepository.save(any(OrderItem.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(orderItemOptionRepository.save(any(OrderItemOption.class))).thenAnswer(inv -> inv.getArgument(0));
         when(paymentGateway.charge(any(Order.class), any(BigDecimal.class)))
                 .thenReturn(new com.utown.utownbackend.dto.PaymentResult(false, null, "Card declined"));
 
@@ -245,7 +317,30 @@ class OrderServiceImplTest {
                 () -> orderService.createOrder(orderRequest)
         );
         assertEquals("Payment failed: Card declined", exception.getMessage());
-        verify(orderRepository, never()).save(any(Order.class));
+
+        // The failed attempt is persisted as a FAILED/CANCELLED order (the method is
+        // annotated noRollbackFor = PaymentFailedException) so it leaves an audit trail.
+        var orderCaptor = org.mockito.ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository, atLeastOnce()).save(orderCaptor.capture());
+        Order persisted = orderCaptor.getValue();
+        assertEquals(PaymentStatus.FAILED, persisted.getPaymentStatus());
+        assertEquals(OrderStatus.CANCELLED, persisted.getStatus());
+        assertEquals("Payment failed: Card declined", persisted.getRejectionReason());
+        assertNotNull(persisted.getCancelledAt());
+        verify(orderStatusHistoryRepository, times(2)).save(any(OrderStatusHistory.class));
+        verify(socketIONotificationService, never()).sendNewOrder(anyLong(), any());
+    }
+
+    @Test
+    void createOrder_and_checkout_doNotRollBackOnPaymentFailure() throws Exception {
+        for (String method : List.of("createOrder", "checkout")) {
+            var m = java.util.Arrays.stream(OrderServiceImpl.class.getMethods())
+                    .filter(x -> x.getName().equals(method)).findFirst().orElseThrow();
+            var tx = m.getAnnotation(org.springframework.transaction.annotation.Transactional.class);
+            assertNotNull(tx, method + " must be transactional");
+            assertTrue(List.of(tx.noRollbackFor()).contains(com.utown.utownbackend.exception.PaymentFailedException.class),
+                    method + " must keep the failed payment record");
+        }
     }
 
     @Test
@@ -594,6 +689,47 @@ class OrderServiceImplTest {
     }
 
     @Test
+    void declineOrder_paidCardOrder_isRefunded() {
+        Order o = createTestOrder(500L, OrderStatus.PENDING);
+        o.setPaymentMethod(PaymentMethod.CARD);
+        o.setPaymentStatus(PaymentStatus.PAID);
+        o.setPaymentTransactionId("txn_123");
+        OrderItem item = createTestOrderItem(600L, o);
+
+        when(orderRepository.findWithUserAndRestaurantOwnerById(500L)).thenReturn(Optional.of(o));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(orderItemRepository.findAllByOrderId(500L)).thenReturn(List.of(item));
+        when(orderItemOptionRepository.findAllByOrderItemIdIn(List.of(600L))).thenReturn(List.of());
+        when(paymentGateway.refund(any(Order.class), eq("txn_123")))
+                .thenReturn(new com.utown.utownbackend.dto.PaymentResult(true, "ref_123", "Refund Success"));
+
+        OrderResponseDto response = orderService.declineOrder(500L, new OrderDeclineRequestDto("Out of stock"));
+
+        assertEquals(OrderStatus.DECLINED, response.status());
+        assertEquals(PaymentStatus.REFUNDED, response.paymentStatus());
+        assertEquals("ref_123", o.getRefundTransactionId());
+        verify(paymentGateway).refund(any(Order.class), eq("txn_123"));
+    }
+
+    @Test
+    void declineOrder_refundFails_leavesOrderUnchanged() {
+        Order o = createTestOrder(500L, OrderStatus.PENDING);
+        o.setPaymentMethod(PaymentMethod.CARD);
+        o.setPaymentStatus(PaymentStatus.PAID);
+        o.setPaymentTransactionId("txn_123");
+
+        when(orderRepository.findWithUserAndRestaurantOwnerById(500L)).thenReturn(Optional.of(o));
+        when(paymentGateway.refund(any(Order.class), eq("txn_123")))
+                .thenReturn(new com.utown.utownbackend.dto.PaymentResult(false, null, "Gateway down"));
+
+        assertThrows(com.utown.utownbackend.exception.PaymentFailedException.class,
+                () -> orderService.declineOrder(500L, new OrderDeclineRequestDto("Out of stock")));
+        assertEquals(OrderStatus.PENDING, o.getStatus());
+        assertEquals(PaymentStatus.PAID, o.getPaymentStatus());
+        verify(orderRepository, never()).save(o);
+    }
+
+    @Test
     void declineOrder_invalidStatus_throwsIllegalStateException() {
         Order o = createTestOrder(500L, OrderStatus.IN_PREPARATION);
         when(orderRepository.findWithUserAndRestaurantOwnerById(500L)).thenReturn(Optional.of(o));
@@ -700,7 +836,9 @@ class OrderServiceImplTest {
         when(addressRepository.findByIdAndDeletedAtIsNull(100L)).thenReturn(Optional.of(address));
         when(restaurantDeliveryAreaRepository.existsByRestaurantIdAndDeliveryAreaIdAndDeletedAtIsNull(10L, 10L)).thenReturn(true);
         when(dishRepository.findByIdAndDeletedAtIsNull(dish1.getId())).thenReturn(Optional.of(dish1));
-        
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(orderItemRepository.save(any(OrderItem.class))).thenAnswer(inv -> inv.getArgument(0));
+
         when(paymentGateway.charge(any(Order.class), any(BigDecimal.class)))
                 .thenReturn(new com.utown.utownbackend.dto.PaymentResult(false, null, "Insufficient funds"));
 
@@ -710,7 +848,16 @@ class OrderServiceImplTest {
         );
         assertEquals("Payment failed: Insufficient funds", exception.getMessage());
         verify(paymentGateway).charge(any(Order.class), any(BigDecimal.class));
-        verify(orderRepository, never()).save(any(Order.class));
+
+        var orderCaptor = org.mockito.ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository, atLeastOnce()).save(orderCaptor.capture());
+        assertEquals(PaymentStatus.FAILED, orderCaptor.getValue().getPaymentStatus());
+        assertEquals(OrderStatus.CANCELLED, orderCaptor.getValue().getStatus());
+
+        // Cart stays active so the customer can retry.
+        assertEquals(CartStatus.ACTIVE, cart.getStatus());
+        verify(cartRepository, never()).save(cart);
+        verify(socketIONotificationService, never()).sendNewOrder(anyLong(), any());
     }
 
     @Test
