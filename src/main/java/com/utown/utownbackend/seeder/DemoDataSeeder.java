@@ -40,6 +40,7 @@ public class DemoDataSeeder implements ApplicationRunner {
     private final DishOptionGroupRepository dishOptionGroupRepository;
     private final DishOptionRepository dishOptionRepository;
     private final OrderItemRepository orderItemRepository;
+    private final RestaurantDeliveryAreaRepository restaurantDeliveryAreaRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Override
@@ -74,6 +75,9 @@ public class DemoDataSeeder implements ApplicationRunner {
         Restaurant rest1 = findOrCreateRestaurant("Demo Pizza Place", owner1, typePizza, seoul, "123 Pizza Street", "02-123-4567", "37.4979", "127.0276", "15000");
         Restaurant rest2 = findOrCreateRestaurant("Demo Burger House", owner2, typeBurger, seoul, "456 Burger Ave", "02-987-6543", "37.5110", "127.0590", "12000");
 
+        findOrCreateDeliveryAreaMapping(rest1, gangnam);
+        findOrCreateDeliveryAreaMapping(rest2, gangnam);
+
         Category cat1 = findOrCreateCategory(rest1, "Main Course");
         Category cat2 = findOrCreateCategory(rest2, "Burgers");
 
@@ -99,7 +103,7 @@ public class DemoDataSeeder implements ApplicationRunner {
             user.setEmail(email);
             user.setPassword(passwordEncoder.encode("password123"));
             user.setRole(role);
-            user.setPhone(phone);
+            user.setPhone(com.utown.utownbackend.util.PhoneUtil.normalizePhone(phone));
             user.setStatus(UserStatus.ACTIVE);
             return userRepository.save(user);
         });
@@ -256,5 +260,20 @@ public class DemoDataSeeder implements ApplicationRunner {
         rating.setScore(ratingScore);
         rating.setComment(comment);
         ratingRepository.save(rating);
+
+        Double avg = ratingRepository.getAverageScoreByRestaurantId(restaurant.getId());
+        if (avg != null) {
+            restaurant.setAverageRating(BigDecimal.valueOf(avg).setScale(2, java.math.RoundingMode.HALF_UP));
+            restaurantRepository.save(restaurant);
+        }
+    }
+
+    private void findOrCreateDeliveryAreaMapping(Restaurant restaurant, DeliveryArea area) {
+        if (!restaurantDeliveryAreaRepository.existsByRestaurantIdAndDeliveryAreaIdAndDeletedAtIsNull(restaurant.getId(), area.getId())) {
+            RestaurantDeliveryArea rda = new RestaurantDeliveryArea();
+            rda.setRestaurant(restaurant);
+            rda.setDeliveryArea(area);
+            restaurantDeliveryAreaRepository.save(rda);
+        }
     }
 }
