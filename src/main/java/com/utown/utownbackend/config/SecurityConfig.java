@@ -53,8 +53,8 @@ public class SecurityConfig {
 
     @Bean
     @ConditionalOnBean({JwtUtil.class})
-    public JwtAuthenticationFilter jwtAuthenticationFilter(JwtUtil jwtUtil) {
-        return new JwtAuthenticationFilter(jwtUtil);
+    public JwtAuthenticationFilter jwtAuthenticationFilter(JwtUtil jwtUtil, com.utown.utownbackend.repository.UserRepository userRepository) {
+        return new JwtAuthenticationFilter(jwtUtil, userRepository);
     }
 
     @Bean
