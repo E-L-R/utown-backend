@@ -19,13 +19,13 @@ RUN ./mvnw clean package -DskipTests -B
 FROM eclipse-temurin:21-jre-alpine AS runner
 WORKDIR /app
 
-# Run as an unprivileged service account for security
-RUN addgroup -S utown && adduser -S utown -G utown
+# Run as an unprivileged service account for security (UID 1000 for standard container & cloud runner compatibility)
+RUN addgroup -g 1000 utown && adduser -u 1000 -G utown -s /bin/sh -D utown
 USER utown:utown
 
 # Copy the packaged jar from the builder stage
 COPY --from=builder --chown=utown:utown /app/target/*.jar app.jar
 
-EXPOSE 8080
+EXPOSE 7860 8080
 
 ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "app.jar"]

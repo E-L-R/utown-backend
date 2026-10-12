@@ -1,3 +1,12 @@
+---
+title: Utown Backend
+emoji: 🍔
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+---
+
 # UTown Backend
 
 [![CI](https://github.com/Habsida-Projects/utown-backend-aug7/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/Habsida-Projects/utown-backend-aug7/actions/workflows/ci.yml)
