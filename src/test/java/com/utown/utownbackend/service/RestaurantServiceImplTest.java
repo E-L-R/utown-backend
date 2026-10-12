@@ -171,15 +171,19 @@ class RestaurantServiceImplTest {
     // ── getAllRestaurants ─────────────────────────────────────────────
 
     @Test
-    @DisplayName("getAllRestaurants - should return list of active restaurants")
+    @DisplayName("getAllRestaurants - should return list of active restaurants with batch-fetched working hours")
     void getAllRestaurants_shouldReturnList() {
         when(restaurantRepository.findAllByDeletedAtIsNull()).thenReturn(List.of(restaurant));
+        when(workingHoursRepository.findByRestaurantIdIn(List.of(1L))).thenReturn(List.of());
 
         List<RestaurantResponseDto> result = restaurantService.getAllRestaurants();
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).name()).isEqualTo("Test Restaurant");
+        assertThat(result.get(0).isOpenNow()).isTrue();
         verify(restaurantRepository).findAllByDeletedAtIsNull();
+        verify(workingHoursRepository).findByRestaurantIdIn(List.of(1L));
+        verify(workingHoursRepository, never()).findByRestaurantId(anyLong());
     }
 
     // ── getRestaurantById ────────────────────────────────────────────
@@ -483,5 +487,14 @@ class RestaurantServiceImplTest {
         RestaurantResponseDto result = restaurantService.getRestaurantById(1L);
 
         assertThat(result.isOpenNow()).isFalse();
+    }
+
+    @Test
+    @DisplayName("isOpenAt - when restaurant has no working hours configured, defaults to open")
+    void isOpenAt_whenNoHoursConfigured_returnsTrue() {
+        when(workingHoursRepository.findByRestaurantId(1L)).thenReturn(List.of());
+
+        java.time.ZonedDateTime now = java.time.ZonedDateTime.now();
+        assertThat(restaurantService.isOpenAt(1L, now)).isTrue();
     }
 }
