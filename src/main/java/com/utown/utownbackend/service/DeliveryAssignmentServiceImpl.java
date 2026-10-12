@@ -148,14 +148,14 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
             throw new IllegalStateException("Cannot pickup delivery in status: " + assignment.getStatus());
         }
 
+        if (assignment.getOrder() != null) {
+            orderService.transitionOrderStatus(assignment.getOrder().getId(), OrderStatus.OUT_FOR_DELIVERY, assignment.getRider().getUser(), "Rider picked up order");
+        }
+
         assignment.setStatus(DeliveryAssignmentStatus.PICKED_UP);
         assignment.setPickedUpAt(LocalDateTime.now());
 
         DeliveryAssignment saved = deliveryAssignmentRepository.save(assignment);
-
-        if (assignment.getOrder() != null) {
-            orderService.transitionOrderStatus(assignment.getOrder().getId(), OrderStatus.OUT_FOR_DELIVERY, assignment.getRider().getUser(), "Rider picked up order");
-        }
 
         log.info("Rider picked up order for delivery assignment ID: {}", id);
         return mapToResponseDto(saved);
@@ -171,14 +171,14 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
             throw new IllegalStateException("Cannot complete delivery in status: " + assignment.getStatus());
         }
 
+        if (assignment.getOrder() != null) {
+            orderService.transitionOrderStatus(assignment.getOrder().getId(), OrderStatus.DELIVERED, assignment.getRider().getUser(), "Order delivered");
+        }
+
         assignment.setStatus(DeliveryAssignmentStatus.DELIVERED);
         assignment.setDeliveredAt(LocalDateTime.now());
 
         DeliveryAssignment saved = deliveryAssignmentRepository.save(assignment);
-
-        if (assignment.getOrder() != null) {
-            orderService.transitionOrderStatus(assignment.getOrder().getId(), OrderStatus.DELIVERED, assignment.getRider().getUser(), "Order delivered");
-        }
 
         RiderProfile rider = assignment.getRider();
         if (rider != null && rider.getStatus() == RiderStatus.ACTIVE) {
