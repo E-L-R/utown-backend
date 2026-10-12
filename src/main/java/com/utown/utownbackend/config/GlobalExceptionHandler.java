@@ -59,6 +59,17 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problemDetail);
     }
 
+    @ExceptionHandler(com.utown.utownbackend.exception.PaymentFailedException.class)
+    public ResponseEntity<ProblemDetail> handlePaymentFailed(com.utown.utownbackend.exception.PaymentFailedException ex) {
+        log.warn("Payment failed: {}", ex.getMessage());
+
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST, ex.getMessage());
+        problemDetail.setTitle("Payment Failed");
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problemDetail);
+    }
+
     @Override
     protected ResponseEntity<Object> handleMethodArgumentNotValid(
             MethodArgumentNotValidException ex,

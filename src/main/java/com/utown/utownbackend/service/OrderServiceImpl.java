@@ -25,6 +25,9 @@ import java.util.*;
 import java.util.stream.Collectors;
 import org.springframework.security.core.context.SecurityContextHolder;
 import com.utown.utownbackend.exception.InvalidOrderStatusTransitionException;
+import com.utown.utownbackend.exception.PaymentFailedException;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 @Slf4j
@@ -47,6 +50,7 @@ public class OrderServiceImpl implements OrderService {
     private final RestaurantDeliveryAreaRepository restaurantDeliveryAreaRepository;
     private final SocketIONotificationService socketIONotificationService;
     private final MeterRegistry meterRegistry;
+    private final PaymentGateway paymentGateway;
 
     private record PreparedItem(
             Dish dish,
@@ -57,7 +61,7 @@ public class OrderServiceImpl implements OrderService {
     ) {}
 
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = PaymentFailedException.class)
     public OrderResponseDto createOrder(OrderRequestDto request) {
         log.info("Executing createOrder");
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -233,6 +237,10 @@ public class OrderServiceImpl implements OrderService {
             ));
         }
 
+        // Charge only once the order and its items are persisted, so the gateway
+        // receives a real order ID and nothing else can fail before the charge.
+        processPayment(savedOrder, user);
+
         OrderResponseDto response = toOrderResponseDto(savedOrder, itemResponseDtos);
 
         socketIONotificationService.sendNewOrder(
@@ -375,7 +383,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = PaymentFailedException.class)
     public OrderResponseDto checkout(CheckoutRequestDto request) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.getPrincipal() instanceof CustomUserDetails principal) {
@@ -547,10 +555,14 @@ public class OrderServiceImpl implements OrderService {
             ));
         }
 
+        recordStatusHistory(savedOrder, OrderStatus.PENDING, user, "Order created via checkout");
+
+        // Charge before expiring the cart: if payment fails the cart stays active
+        // so the customer can retry with a different payment method.
+        processPayment(savedOrder, user);
+
         cart.setStatus(CartStatus.EXPIRED);
         cartRepository.save(cart);
-
-        recordStatusHistory(savedOrder, OrderStatus.PENDING, user, "Order created via checkout");
 
         OrderResponseDto response = toOrderResponseDto(savedOrder, orderItemDtos);
 
@@ -579,11 +591,94 @@ public class OrderServiceImpl implements OrderService {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Order not found with id: " + id));
 
-        if (order.getPaymentStatus() == PaymentStatus.PAID) {
-            order.setPaymentStatus(PaymentStatus.REFUNDED);
+        // transition() validates the status change before issuing any refund.
+        return transition(order, OrderStatus.CANCELLED, order.getUser(), request.reason());
+    }
+
+    private boolean requiresOnlinePayment(Order order) {
+        return order.getPaymentMethod() == PaymentMethod.CARD
+                || order.getPaymentMethod() == PaymentMethod.BANK_TRANSFER;
+    }
+
+    /**
+     * Charges the gateway for an already-persisted order.
+     * <p>
+     * On failure the order is marked {@code FAILED}/{@code CANCELLED} and a
+     * {@link PaymentFailedException} is thrown. Callers declare
+     * {@code noRollbackFor = PaymentFailedException.class} so the failed attempt
+     * is committed as an audit record instead of disappearing with a rollback.
+     * <p>
+     * On success a compensating refund is registered in case the surrounding
+     * transaction rolls back after the charge went through.
+     */
+    private void processPayment(Order order, User actor) {
+        if (!requiresOnlinePayment(order)) {
+            return;
         }
 
-        return transition(order, OrderStatus.CANCELLED, order.getUser(), request.reason());
+        PaymentResult paymentResult = paymentGateway.charge(order, order.getTotalAmount());
+        if (!paymentResult.success()) {
+            log.warn("Payment failed for order {}: {}", order.getId(), paymentResult.message());
+            String reason = "Payment failed: " + paymentResult.message();
+            order.setPaymentStatus(PaymentStatus.FAILED);
+            order.setStatus(OrderStatus.CANCELLED);
+            order.setCancelledAt(LocalDateTime.now());
+            order.setRejectionReason(reason);
+            orderRepository.save(order);
+            recordStatusHistory(order, OrderStatus.CANCELLED, actor, reason);
+            throw new PaymentFailedException(reason);
+        }
+
+        order.setPaymentStatus(PaymentStatus.PAID);
+        order.setPaymentTransactionId(paymentResult.transactionId());
+        orderRepository.save(order);
+        registerChargeCompensation(order, paymentResult.transactionId());
+    }
+
+    private void registerChargeCompensation(Order order, String transactionId) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status != STATUS_ROLLED_BACK) {
+                    return;
+                }
+                log.warn("Transaction rolled back after charging order {}; issuing compensating refund for {}",
+                        order.getId(), transactionId);
+                try {
+                    PaymentResult refund = paymentGateway.refund(order, transactionId);
+                    if (!refund.success()) {
+                        log.error("Compensating refund failed for transaction {}: {}", transactionId, refund.message());
+                    }
+                } catch (RuntimeException ex) {
+                    log.error("Compensating refund threw for transaction {}", transactionId, ex);
+                }
+            }
+        });
+    }
+
+    /**
+     * Refunds an online payment when an order reaches a terminal state that
+     * means the customer will not receive it (CANCELLED or DECLINED).
+     * Payment status only becomes REFUNDED when the gateway confirms the refund.
+     */
+    private void refundIfPaid(Order order) {
+        if (order.getPaymentStatus() != PaymentStatus.PAID) {
+            return;
+        }
+        if (order.getPaymentTransactionId() == null) {
+            order.setPaymentStatus(PaymentStatus.REFUNDED);
+            return;
+        }
+        PaymentResult refundResult = paymentGateway.refund(order, order.getPaymentTransactionId());
+        if (!refundResult.success()) {
+            log.error("Refund failed for order {}: {}", order.getId(), refundResult.message());
+            throw new PaymentFailedException("Refund failed: " + refundResult.message());
+        }
+        order.setPaymentStatus(PaymentStatus.REFUNDED);
+        order.setRefundTransactionId(refundResult.transactionId());
     }
 
     private User resolveActor(Order order) {
@@ -716,6 +811,10 @@ public class OrderServiceImpl implements OrderService {
         if (!order.getStatus().canTransitionTo(targetStatus)) {
             throw new InvalidOrderStatusTransitionException(order.getStatus(), targetStatus);
         }
+        // Refund before mutating the order so a failed refund leaves it untouched.
+        if (targetStatus == OrderStatus.CANCELLED || targetStatus == OrderStatus.DECLINED) {
+            refundIfPaid(order);
+        }
         order.setStatus(targetStatus);
 
         LocalDateTime now = LocalDateTime.now();
@@ -723,7 +822,12 @@ public class OrderServiceImpl implements OrderService {
             case ACCEPTED -> order.setAcceptedAt(now);
             case READY_FOR_PICKUP -> order.setReadyAt(now);
             case OUT_FOR_DELIVERY -> order.setPickedUpAt(now);
-            case DELIVERED -> order.setDeliveredAt(now);
+            case DELIVERED -> {
+                order.setDeliveredAt(now);
+                if (order.getPaymentMethod() == PaymentMethod.CASH && order.getPaymentStatus() == PaymentStatus.PENDING) {
+                    order.setPaymentStatus(PaymentStatus.PAID);
+                }
+            }
             case DECLINED -> {
                 order.setRejectedAt(now);
                 order.setRejectionReason(reason);
