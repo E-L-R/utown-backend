@@ -57,6 +57,26 @@ The UTown backend powers a multi-role food delivery platform servicing customers
   * Isolated MySQL service and Spring Boot application orchestrated via Docker Compose.
   * Automated health checks to prevent database connection race conditions during startup.
 
+* **Order Lifecycle State Machine**:
+  * Centralized state transitions map with exhaustive validation.
+  * Ensures safe progression from checkout to delivery.
+  
+  ```mermaid
+  stateDiagram-v2
+      [*] --> PENDING
+      PENDING --> ACCEPTED
+      PENDING --> DECLINED
+      PENDING --> CANCELLED
+      ACCEPTED --> IN_PREPARATION
+      IN_PREPARATION --> READY_FOR_PICKUP
+      READY_FOR_PICKUP --> OUT_FOR_DELIVERY
+      OUT_FOR_DELIVERY --> DELIVERED
+      DELIVERED --> COMPLETED
+      DECLINED --> [*]
+      CANCELLED --> [*]
+      COMPLETED --> [*]
+  ```
+
 ---
 
 ## Prerequisites
