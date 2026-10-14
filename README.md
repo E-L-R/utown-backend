@@ -175,20 +175,21 @@ docker compose down -v
 
 ### Running with Demo Data Seeder (Demo Walkthrough)
 
-If you want to start the application with a pre-populated database (users, restaurants, menus, orders), you can enable the `demo` profile. The seeder is idempotent and will skip if it detects the admin user is already present.
+If you want to start the application with a pre-populated database (users, restaurants, menus, orders), you can enable the `demo` profile. The seeder is idempotent: every user, restaurant, dish and order is find-or-create, so re-running it only adds what is missing.
 
 1. **Start the demo environment**: Run `SPRING_PROFILES_ACTIVE=demo docker compose up -d`
 2. **Access Swagger UI**: Navigate to [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
 
 **Demo Accounts (Password for all: `password123`)**:
-- Admin: `admin@demo.com` (Phone: `01000000000`)
-- Restaurant Owner: `owner@demo.com` (Phone: `01022222222`)
-- Customer: `customer@demo.com` (Phone: `01011111111`)
-- Rider: `rider@demo.com` (Phone: `01033333333`)
+- Admin: `admin@demo.com` (Phone: `01011111111`)
+- Restaurant Owner: `owner1@demo.com` (Phone: `01022222222`) — owns Demo Pizza Place, Seoul Bowl Co., Hanok Noodle Bar, Bean & Bloom Café
+- Restaurant Owner: `owner2@demo.com` (Phone: `01022222223`) — owns Demo Burger House, Gangnam Fried Chicken, Itaewon Sushi Club
+- Customer: `customer@demo.com` (Phone: `01033333333`)
+- Rider: `rider@demo.com` (Phone: `01044444444`)
 
 3. **Login as Customer**: 
    - Expand `POST /api/auth/login` in Swagger
-   - Use payload: `{"phone": "01011111111", "password": "password123"}`
+   - Use payload: `{"phone": "01033333333", "password": "password123"}`
    - Execute and copy the `token` from the response.
 4. **Authorize**: Scroll to the top of Swagger UI, click **Authorize**, paste your token, and click Login.
 5. **Create an Order**:
