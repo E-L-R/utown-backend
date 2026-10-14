@@ -63,7 +63,10 @@ class OrderControllerTest {
                 null,
                 status == OrderStatus.COMPLETED ? LocalDateTime.now() : null,
                 null,
-                List.of()
+                List.of(),
+                "Demo Pizza Place",
+                "123 Test Street",
+                LocalDateTime.now()
         );
     }
 

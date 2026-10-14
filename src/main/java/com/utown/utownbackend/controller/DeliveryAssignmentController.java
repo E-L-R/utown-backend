@@ -8,7 +8,11 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import com.utown.utownbackend.security.CustomUserDetails;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -63,6 +67,32 @@ public class DeliveryAssignmentController {
     ) {
         List<DeliveryAssignmentResponseDto> list = deliveryAssignmentService.getAssignments(riderId, orderId, status);
         return ResponseEntity.ok(list);
+    }
+
+    @Operation(summary = "List the current rider's assignments")
+    @GetMapping("/me")
+    @PreAuthorize("hasRole('RIDER')")
+    public ResponseEntity<List<DeliveryAssignmentResponseDto>> getMyAssignments(
+            @RequestParam(required = false) DeliveryAssignmentStatus status
+    ) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails principal)) {
+            throw new AccessDeniedException("Authentication required");
+        }
+        return ResponseEntity.ok(deliveryAssignmentService.getAssignmentsForRiderUser(principal.getId(), status));
+    }
+
+    @Operation(summary = "List assignments for an order")
+    @GetMapping("/order/{orderId}")
+    @PreAuthorize("""
+        hasRole('ADMIN') or
+        @orderSecurity.isCustomer(authentication, #orderId) or
+        @orderSecurity.isRestaurantOwner(authentication, #orderId)
+        """)
+    public ResponseEntity<List<DeliveryAssignmentResponseDto>> getAssignmentsForOrder(
+            @PathVariable Long orderId
+    ) {
+        return ResponseEntity.ok(deliveryAssignmentService.getAssignments(null, orderId, null));
     }
 
     @Operation(summary = "Accept assignment")

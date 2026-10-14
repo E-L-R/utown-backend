@@ -89,6 +89,7 @@ public class OrderController {
         hasRole('ADMIN')
         or @orderSecurity.isCustomer(authentication, #id)
         or @orderSecurity.isRestaurantOwner(authentication, #id)
+        or @orderSecurity.isAssignedRider(authentication, #id)
         """)
     public ResponseEntity<OrderResponseDto> getOrderById(
             @PathVariable Long id

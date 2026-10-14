@@ -260,6 +260,7 @@ public class OrderServiceImpl implements OrderService {
 
 
     @Override
+    @Transactional(readOnly = true)
     public List<OrderResponseDto> getOrders(
             Long restaurantId,
             Long userId,
@@ -336,6 +337,7 @@ public class OrderServiceImpl implements OrderService {
 
 
     @Override
+    @Transactional(readOnly = true)
     public OrderResponseDto getOrderById(Long id) {
         log.info("Executing getOrderById with id={}", id);
         Order order = orderRepository.findById(id)
@@ -805,8 +807,21 @@ public class OrderServiceImpl implements OrderService {
                 order.getPickedUpAt(),
                 order.getDeliveredAt(),
                 order.getCancelledAt(),
-                items
+                items,
+                order.getRestaurant().getName(),
+                formatAddress(order.getAddress()),
+                order.getCreatedAt()
         );
+    }
+
+    private static String formatAddress(Address address) {
+        if (address == null) {
+            return null;
+        }
+        String line = address.getAddressLine();
+        return address.getPostalCode() == null || address.getPostalCode().isBlank()
+                ? line
+                : line + ", " + address.getPostalCode();
     }
     @Override
     @Transactional

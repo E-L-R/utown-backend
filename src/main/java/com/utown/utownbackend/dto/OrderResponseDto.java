@@ -30,6 +30,9 @@ public record OrderResponseDto(
         LocalDateTime pickedUpAt,
         LocalDateTime deliveredAt,
         LocalDateTime cancelledAt,
-        List<OrderItemResponseDto> items
+        List<OrderItemResponseDto> items,
+        String restaurantName,
+        String deliveryAddress,
+        LocalDateTime createdAt
 ) {
 }

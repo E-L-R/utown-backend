@@ -37,7 +37,7 @@ public class RiderProfileController {
 
     @Operation(summary = "Get rider profile by id")
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'RESTAURANT_OWNER')")
     public ResponseEntity<List<RiderProfileResponseDto>> getAllRiderProfiles(
             @RequestParam(required = false) RiderStatus status,
             @RequestParam(required = false) Boolean availability

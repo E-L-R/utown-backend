@@ -1,5 +1,6 @@
 package com.utown.utownbackend.security;
 
+import com.utown.utownbackend.repository.DeliveryAssignmentRepository;
 import com.utown.utownbackend.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Component;
 public class OrderSecurity {
 
     private final OrderRepository orderRepository;
+    private final DeliveryAssignmentRepository deliveryAssignmentRepository;
 
     public boolean isCustomer(Authentication authentication, Long orderId) {
         if (authentication == null || orderId == null) {
@@ -52,5 +54,19 @@ public class OrderSecurity {
                         )
                 )
                 .orElse(false);
+    }
+
+    public boolean isAssignedRider(Authentication authentication, Long orderId) {
+        if (authentication == null || orderId == null) {
+            return false;
+        }
+
+        if (!(authentication.getPrincipal() instanceof CustomUserDetails principal)) {
+            return false;
+        }
+
+        Long userId = principal.getId();
+
+        return userId != null && deliveryAssignmentRepository.existsByOrderIdAndRiderUserId(orderId, userId);
     }
 }

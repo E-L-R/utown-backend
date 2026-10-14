@@ -45,6 +45,8 @@ public interface DeliveryAssignmentRepository extends JpaRepository<DeliveryAssi
 
     boolean existsByOrderIdAndStatusIn(Long orderId, Collection<DeliveryAssignmentStatus> statuses);
 
+    boolean existsByOrderIdAndRiderUserId(Long orderId, Long userId);
+
     boolean existsByRiderIdAndStatusIn(Long riderId, Collection<DeliveryAssignmentStatus> statuses);
 
     @EntityGraph(attributePaths = {"order", "order.restaurant", "rider", "rider.user"})

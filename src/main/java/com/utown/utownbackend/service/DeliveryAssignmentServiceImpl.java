@@ -122,6 +122,15 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<DeliveryAssignmentResponseDto> getAssignmentsForRiderUser(Long userId, DeliveryAssignmentStatus status) {
+        log.info("Executing getAssignmentsForRiderUser with userId={}, status={}", userId, status);
+        RiderProfile rider = riderProfileRepository.findByUserIdAndUserDeletedAtIsNull(userId)
+                .orElseThrow(() -> new EntityNotFoundException("Rider profile not found for user id: " + userId));
+        return getAssignments(rider.getId(), null, status);
+    }
+
+    @Override
     public DeliveryAssignmentResponseDto acceptAssignment(Long id) {
         log.info("Executing acceptAssignment with id={}", id);
         DeliveryAssignment assignment = deliveryAssignmentRepository.findById(id)

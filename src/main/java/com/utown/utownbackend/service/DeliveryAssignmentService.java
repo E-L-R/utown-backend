@@ -14,6 +14,8 @@ public interface DeliveryAssignmentService {
 
     List<DeliveryAssignmentResponseDto> getAssignments(Long riderId, Long orderId, DeliveryAssignmentStatus status);
 
+    List<DeliveryAssignmentResponseDto> getAssignmentsForRiderUser(Long userId, DeliveryAssignmentStatus status);
+
     DeliveryAssignmentResponseDto acceptAssignment(Long id);
 
     DeliveryAssignmentResponseDto pickupDelivery(Long id);

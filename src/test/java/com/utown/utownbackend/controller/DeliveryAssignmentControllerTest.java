@@ -4,6 +4,9 @@ import com.utown.utownbackend.dto.DeliveryAssignmentRequestDto;
 import com.utown.utownbackend.dto.DeliveryAssignmentResponseDto;
 import com.utown.utownbackend.entity.DeliveryAssignmentStatus;
 import com.utown.utownbackend.exception.ResourceConflictException;
+import com.utown.utownbackend.entity.User;
+import com.utown.utownbackend.entity.UserRole;
+import com.utown.utownbackend.security.CustomUserDetails;
 import com.utown.utownbackend.security.DeliveryAssignmentSecurity;
 import com.utown.utownbackend.security.OrderSecurity;
 import com.utown.utownbackend.service.DeliveryAssignmentService;
@@ -22,6 +25,8 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
@@ -553,6 +558,53 @@ class DeliveryAssignmentControllerTest {
     void getAssignments_customer_shouldReturn403() throws Exception {
 
         mockMvc.perform(get("/api/delivery-assignments"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("GET /api/delivery-assignments/me - RIDER gets their own assignments")
+    void getMyAssignments_rider_shouldReturn200() throws Exception {
+        User riderUser = TestDataFactory.createUser(7L);
+        riderUser.setRole(UserRole.RIDER);
+        CustomUserDetails details = new CustomUserDetails(riderUser);
+        when(deliveryAssignmentService.getAssignmentsForRiderUser(7L, null)).thenReturn(List.of(responseDto));
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(details, null, details.getAuthorities()));
+
+        mockMvc.perform(get("/api/delivery-assignments/me"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(50L));
+    }
+
+    @Test
+    @WithMockUser(roles = "CUSTOMER")
+    @DisplayName("GET /api/delivery-assignments/me - non-rider is forbidden")
+    void getMyAssignments_customer_shouldReturn403() throws Exception {
+        mockMvc.perform(get("/api/delivery-assignments/me"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "CUSTOMER")
+    @DisplayName("GET /api/delivery-assignments/order/{orderId} - order's customer can view its rider")
+    void getAssignmentsForOrder_customerOfOrder_shouldReturn200() throws Exception {
+        when(orderSecurity.isCustomer(any(), eq(100L))).thenReturn(true);
+        when(deliveryAssignmentService.getAssignments(null, 100L, null)).thenReturn(List.of(responseDto));
+
+        mockMvc.perform(get("/api/delivery-assignments/order/{orderId}", 100L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].orderId").value(100L));
+    }
+
+    @Test
+    @WithMockUser(roles = "CUSTOMER")
+    @DisplayName("GET /api/delivery-assignments/order/{orderId} - other customers are forbidden")
+    void getAssignmentsForOrder_otherCustomer_shouldReturn403() throws Exception {
+        when(orderSecurity.isCustomer(any(), eq(100L))).thenReturn(false);
+        when(orderSecurity.isRestaurantOwner(any(), eq(100L))).thenReturn(false);
+
+        mockMvc.perform(get("/api/delivery-assignments/order/{orderId}", 100L))
                 .andExpect(status().isForbidden());
     }
 }

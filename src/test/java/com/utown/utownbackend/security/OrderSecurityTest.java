@@ -4,6 +4,7 @@ import com.utown.utownbackend.entity.Order;
 import com.utown.utownbackend.entity.Restaurant;
 import com.utown.utownbackend.entity.User;
 import com.utown.utownbackend.entity.UserRole;
+import com.utown.utownbackend.repository.DeliveryAssignmentRepository;
 import com.utown.utownbackend.repository.OrderRepository;
 import com.utown.utownbackend.util.TestDataFactory;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +27,9 @@ class OrderSecurityTest {
 
     @Mock
     private OrderRepository orderRepository;
+
+    @Mock
+    private DeliveryAssignmentRepository deliveryAssignmentRepository;
 
     @InjectMocks
     private OrderSecurity orderSecurity;
@@ -135,5 +139,29 @@ class OrderSecurityTest {
     void isRestaurantOwner_nullParams_returnsFalse() {
         assertThat(orderSecurity.isRestaurantOwner(null, 500L)).isFalse();
         assertThat(orderSecurity.isRestaurantOwner(ownerAuth, null)).isFalse();
+    }
+
+    @Test
+    @DisplayName("isAssignedRider - returns true when the user rides an assignment for the order")
+    void isAssignedRider_assigned_returnsTrue() {
+        when(deliveryAssignmentRepository.existsByOrderIdAndRiderUserId(500L, 10L)).thenReturn(true);
+
+        assertThat(orderSecurity.isAssignedRider(customerAuth, 500L)).isTrue();
+    }
+
+    @Test
+    @DisplayName("isAssignedRider - returns false when the user has no assignment for the order")
+    void isAssignedRider_notAssigned_returnsFalse() {
+        when(deliveryAssignmentRepository.existsByOrderIdAndRiderUserId(500L, 20L)).thenReturn(false);
+
+        assertThat(orderSecurity.isAssignedRider(ownerAuth, 500L)).isFalse();
+    }
+
+    @Test
+    @DisplayName("isAssignedRider - returns false for null params or non-CustomUserDetails principal")
+    void isAssignedRider_invalidAuth_returnsFalse() {
+        assertThat(orderSecurity.isAssignedRider(null, 500L)).isFalse();
+        assertThat(orderSecurity.isAssignedRider(customerAuth, null)).isFalse();
+        assertThat(orderSecurity.isAssignedRider(new UsernamePasswordAuthenticationToken("anonymousUser", null), 500L)).isFalse();
     }
 }
