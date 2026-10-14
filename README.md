@@ -185,7 +185,7 @@ If you want to start the application with a pre-populated database (users, resta
 - Restaurant Owner: `owner1@demo.com` (Phone: `01022222222`) — owns Demo Pizza Place, Seoul Bowl Co., Hanok Noodle Bar, Bean & Bloom Café
 - Restaurant Owner: `owner2@demo.com` (Phone: `01022222223`) — owns Demo Burger House, Gangnam Fried Chicken, Itaewon Sushi Club
 - Customer: `customer@demo.com` (Phone: `01033333333`)
-- Rider: `rider@demo.com` (Phone: `01044444444`)
+- Riders: `rider@demo.com` (Phone: `01044444444`), `rider2@demo.com` (`01044444445`), `rider3@demo.com` (`01044444446`)
 
 3. **Login as Customer**: 
    - Expand `POST /api/auth/login` in Swagger
