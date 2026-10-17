@@ -28,6 +28,4 @@ COPY --from=builder --chown=utown:utown /app/target/*.jar app.jar
 
 EXPOSE 8080
 
-# Faster cold starts on a small, shared CPU (Render free tier): C1-only JIT and the serial GC
-# trade a little peak throughput for noticeably quicker boot and a smaller memory footprint.
-ENTRYPOINT ["java", "-XX:TieredStopAtLevel=1", "-XX:+UseSerialGC", "-XX:MaxRAMPercentage=75", "-Djava.security.egd=file:/dev/./urandom", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "app.jar"]
